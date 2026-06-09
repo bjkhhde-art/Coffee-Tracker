@@ -1,0 +1,79 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Coffee Tracker Icon</title>
+  <desc>Minimalistisches Coffee Tracker Logo mit Portafilter, Druckanzeige und Tracking-Diagramm.</desc>
+
+  <defs>
+    <linearGradient id="bgGradient" x1="64" y1="32" x2="448" y2="496" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2A160C"/>
+      <stop offset="1" stop-color="#120905"/>
+    </linearGradient>
+
+    <linearGradient id="coffeeGradient" x1="160" y1="180" x2="352" y2="330" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D89A55"/>
+      <stop offset="1" stop-color="#8A4B20"/>
+    </linearGradient>
+
+    <linearGradient id="accentGradient" x1="130" y1="360" x2="390" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFCF8A"/>
+      <stop offset="1" stop-color="#C47A35"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="512" height="512" rx="116" fill="url(#bgGradient)"/>
+
+  <!-- dezenter Glow -->
+  <circle cx="150" cy="105" r="125" fill="#D89A55" opacity="0.16"/>
+  <circle cx="390" cy="420" r="150" fill="#FFCF8A" opacity="0.10"/>
+
+  <!-- Hauptkreis -->
+  <circle cx="256" cy="244" r="154" stroke="#FFCF8A" stroke-width="16" opacity="0.95"/>
+  <path d="M404 244C404 281.8 389.8 316.3 366.4 342.5" stroke="#D89A55" stroke-width="16" stroke-linecap="round"/>
+
+  <!-- Portafilter Körper -->
+  <g filter="url(#softShadow)">
+    <path d="M128 225C128 180.8 163.8 145 208 145H304C348.2 145 384 180.8 384 225V252C384 322.7 326.7 380 256 380C185.3 380 128 322.7 128 252V225Z" fill="#FFF3DF"/>
+    <path d="M150 246C174 226 210 216 256 216C302 216 338 226 362 246V255C362 313.5 314.5 361 256 361C197.5 361 150 313.5 150 255V246Z" fill="url(#coffeeGradient)"/>
+    <path d="M128 225C128 180.8 163.8 145 208 145H304C348.2 145 384 180.8 384 225V252C384 322.7 326.7 380 256 380C185.3 380 128 322.7 128 252V225Z" stroke="#3A1D0D" stroke-width="14"/>
+  </g>
+
+  <!-- Griff -->
+  <path d="M374 224H448C474.5 224 496 245.5 496 272C496 298.5 474.5 320 448 320H374V224Z" fill="#3A1D0D"/>
+  <path d="M390 244H445C460.5 244 473 256.5 473 272C473 287.5 460.5 300 445 300H390V244Z" fill="#5A2B12"/>
+
+  <!-- Druckanzeige / Gauge -->
+  <path d="M184 224C196 184 225.2 162 256 162C286.8 162 316 184 328 224" stroke="#3A1D0D" stroke-width="12" stroke-linecap="round"/>
+  <path d="M256 168V190" stroke="#A9632B" stroke-width="8" stroke-linecap="round"/>
+  <path d="M219 178L229 197" stroke="#A9632B" stroke-width="8" stroke-linecap="round"/>
+  <path d="M293 178L283 197" stroke="#A9632B" stroke-width="8" stroke-linecap="round"/>
+  <path d="M203 210L222 219" stroke="#A9632B" stroke-width="8" stroke-linecap="round"/>
+  <path d="M309 219L328 210" stroke="#A9632B" stroke-width="8" stroke-linecap="round"/>
+  <path d="M256 224L307 185" stroke="#3A1D0D" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="256" cy="224" r="13" fill="#3A1D0D"/>
+
+  <!-- Coffee Bean -->
+  <circle cx="256" cy="270" r="39" fill="#3A1D0D" stroke="#FFF3DF" stroke-width="8"/>
+  <path d="M261 236C246 253 246 287 261 304" stroke="#FFF3DF" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Tracking Diagramm -->
+  <g>
+    <rect x="157" y="390" width="30" height="54" rx="8" fill="#C47A35"/>
+    <rect x="210" y="374" width="30" height="70" rx="8" fill="#D89A55"/>
+    <rect x="263" y="352" width="30" height="92" rx="8" fill="#FFCF8A"/>
+    <rect x="316" y="330" width="30" height="114" rx="8" fill="#D89A55"/>
+
+    <path d="M172 354L225 335L278 344L331 300" stroke="url(#accentGradient)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="172" cy="354" r="13" fill="#FFCF8A"/>
+    <circle cx="225" cy="335" r="13" fill="#FFCF8A"/>
+    <circle cx="278" cy="344" r="13" fill="#FFCF8A"/>
+    <circle cx="331" cy="300" r="13" fill="#FFCF8A"/>
+  </g>
+
+  <!-- kleiner Dampf/Crema-Akzent -->
+  <path d="M128 155C111 129 119 102 145 85" stroke="#FFCF8A" stroke-width="10" stroke-linecap="round" opacity="0.9"/>
+  <path d="M382 147C397 122 390 99 369 82" stroke="#D89A55" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+</svg>
