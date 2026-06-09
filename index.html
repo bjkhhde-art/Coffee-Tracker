@@ -1,1 +1,248 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Coffee Tracker</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Espresso • Mühle • Shot-Tracking</p>
+        <h1>Coffee Tracker</h1>
+        <p class="subline">Mahlgrad, Extraktionszeit, Druck und Geschmack sauber tracken.</p>
+      </div>
+      <div class="hero-badge">
+        <span>☕</span>
+        <strong id="todayLabel">Heute</strong>
+      </div>
+    </header>
 
+    <nav class="tabs" aria-label="Navigation">
+      <button class="tab active" data-view="dashboard">Dashboard</button>
+      <button class="tab" data-view="shot">Shot eintragen</button>
+      <button class="tab" data-view="database">Mahlgrade</button>
+      <button class="tab" data-view="history">Verlauf</button>
+    </nav>
+
+    <section id="view-dashboard" class="view active">
+      <div class="cards">
+        <article class="card">
+          <span class="card-label">Beste Bewertung</span>
+          <strong id="bestRating">–</strong>
+          <small id="bestRatingSub">Noch keine Shots</small>
+        </article>
+
+        <article class="card">
+          <span class="card-label">Ø Extraktionszeit</span>
+          <strong id="avgTime">–</strong>
+          <small>über gespeicherte Shots</small>
+        </article>
+
+        <article class="card">
+          <span class="card-label">Ø Druck</span>
+          <strong id="avgPressure">–</strong>
+          <small>über gespeicherte Shots</small>
+        </article>
+
+        <article class="card">
+          <span class="card-label">Letzter Mahlgrad</span>
+          <strong id="lastGrind">–</strong>
+          <small id="lastShotSub">Noch kein Verlauf</small>
+        </article>
+      </div>
+
+      <div class="grid two">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Extraktionszeit über Zeit</h2>
+            <span>Linienchart</span>
+          </div>
+          <canvas id="timeChart" height="220"></canvas>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Druck über Zeit</h2>
+            <span>Linienchart</span>
+          </div>
+          <canvas id="pressureChart" height="220"></canvas>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Empfehlung aus deinen Daten</h2>
+          <span>automatisch</span>
+        </div>
+        <p id="recommendation" class="recommendation">
+          Trage ein paar Shots ein, dann kann die App erkennen, welcher Mahlgrad bei welcher Bohne am besten funktioniert.
+        </p>
+      </article>
+    </section>
+
+    <section id="view-shot" class="view">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Neuen Espresso-Shot speichern</h2>
+          <span>36g Zielmenge</span>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Vorlage aus Mahlgrad-CSV
+            <select id="settingSelect">
+              <option value="">Manuell eintragen</option>
+            </select>
+          </label>
+
+          <label>
+            Favorit
+            <select id="favoriteSelect">
+              <option value="">Kein Favorit</option>
+            </select>
+          </label>
+
+          <label>
+            Datum
+            <input id="shotDate" type="date" />
+          </label>
+
+          <label>
+            Uhrzeit
+            <input id="shotTime" type="time" />
+          </label>
+
+          <label>
+            Marke/Rösterei
+            <input id="marke" type="text" placeholder="z. B. Pano Kaffee" />
+          </label>
+
+          <label>
+            Bohne
+            <input id="bohne" type="text" placeholder="z. B. Sipeo Espresso" />
+          </label>
+
+          <label>
+            Röstgrad
+            <input id="roestgrad" type="text" placeholder="z. B. Medium Dark Roast" />
+          </label>
+
+          <label>
+            Zusammensetzung
+            <input id="zusammensetzung" type="text" placeholder="z. B. 80% Arabica, 20% Robusta" />
+          </label>
+
+          <label>
+            Dosis in g
+            <input id="dose" type="number" inputmode="decimal" step="0.1" value="18" />
+          </label>
+
+          <label>
+            Output in g
+            <input id="yield" type="number" inputmode="decimal" step="0.1" value="36" />
+          </label>
+
+          <label>
+            Mahlgrad
+            <input id="mahlgrad" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 13.5" />
+          </label>
+
+          <label>
+            Extraktionszeit in s
+            <input id="extractionTime" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 25" />
+          </label>
+
+          <label>
+            Druck in Bar
+            <input id="pressure" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 9.0" />
+          </label>
+
+          <label>
+            Temperatur in °C
+            <input id="temperature" type="number" inputmode="decimal" step="0.1" placeholder="optional" />
+          </label>
+
+          <label>
+            Bewertung
+            <select id="rating">
+              <option value="">–</option>
+              <option value="1">1 – schlecht</option>
+              <option value="2">2 – geht so</option>
+              <option value="3">3 – okay</option>
+              <option value="4">4 – gut</option>
+              <option value="5">5 – sehr gut</option>
+            </select>
+          </label>
+
+          <label class="full">
+            Geschmack / Notizen
+            <textarea id="tasteNotes" rows="4" placeholder="z. B. gute Crema, leicht bitter, sauer, rund, wässrig ..."></textarea>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="saveShotBtn" class="primary">Shot speichern</button>
+          <button id="saveFavoriteBtn" class="secondary">Als Favorit speichern</button>
+          <button id="resetFormBtn" class="ghost">Formular leeren</button>
+        </div>
+
+        <p id="formMessage" class="message"></p>
+      </article>
+    </section>
+
+    <section id="view-database" class="view">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Mahlgrad-Datenbank aus CSV</h2>
+          <span id="settingsCount">0 Einträge</span>
+        </div>
+
+        <div class="toolbar">
+          <input id="settingsSearch" type="search" placeholder="Suche nach Marke, Bohne, Geschmack ..." />
+          <button id="reloadBtn" class="secondary">Neu laden</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Marke</th>
+                <th>Bohne</th>
+                <th>Röstgrad</th>
+                <th>Mahlgrad</th>
+                <th>36g Zeit</th>
+                <th>Druck</th>
+                <th>Geschmack</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="settingsTable"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section id="view-history" class="view">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Shot-Verlauf</h2>
+          <span id="shotsCount">0 Shots</span>
+        </div>
+
+        <div class="toolbar">
+          <input id="historySearch" type="search" placeholder="Suche nach Bohne, Mahlgrad, Notiz ..." />
+          <button id="deleteAllLocalFiltersBtn" class="secondary">Filter leeren</button>
+        </div>
+
+        <div id="shotsList" class="shots-list"></div>
+      </article>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
