@@ -3,16 +3,44 @@
    Trägt Mahlgrad, Extraktionszeit, Druck und Geschmack ein.
    ============================================================ */
 
-// 1) HIER DEINE SUPABASE DATEN EINTRAGEN
-const SUPABASE_URL = "https://lrzgcqoqcwicpuuuhaoj.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_...";
 
-// 2) Tabellennamen
+/* ============================================================
+   1. SUPABASE EINSTELLUNGEN
+   ============================================================ */
+
+const SUPABASE_URL = "https://lrzgcqoqcwicpuuuhaoj.supabase.co";
+
+// WICHTIG:
+// Hier muss dein kompletter Publishable Key / anon public key rein.
+// Nicht nur "sb_publishable_..." eintragen.
+const SUPABASE_ANON_KEY = "sb_publishable_uunR3UQ9rttiK8dG85IedQ__Tn1duVK";
+
+
+/* ============================================================
+   2. TABELLENNAMEN
+   ============================================================ */
+
 const SETTINGS_TABLE = "coffee_grinder_settings";
 const SHOTS_TABLE = "coffee_shots";
 const FAVORITES_TABLE = "coffee_favorites";
 
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ============================================================
+   3. SUPABASE CLIENT
+   ============================================================ */
+
+let supabaseClient = null;
+
+if (window.supabase) {
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} else {
+  console.error("Supabase Library wurde nicht geladen. Prüfe den Script-Tag in index.html.");
+}
+
+
+/* ============================================================
+   4. APP STATE
+   ============================================================ */
 
 const state = {
   settings: [],
@@ -22,10 +50,16 @@ const state = {
   historySearch: "",
 };
 
+
+/* ============================================================
+   5. DOM HELPER
+   ============================================================ */
+
 const $ = (id) => document.getElementById(id);
 
 const el = {
   todayLabel: $("todayLabel"),
+
   bestRating: $("bestRating"),
   bestRatingSub: $("bestRatingSub"),
   avgTime: $("avgTime"),
@@ -38,6 +72,7 @@ const el = {
 
   settingSelect: $("settingSelect"),
   favoriteSelect: $("favoriteSelect"),
+
   shotDate: $("shotDate"),
   shotTime: $("shotTime"),
   marke: $("marke"),
@@ -57,10 +92,16 @@ const el = {
   settingsSearch: $("settingsSearch"),
   settingsTable: $("settingsTable"),
   settingsCount: $("settingsCount"),
+
   historySearch: $("historySearch"),
   shotsList: $("shotsList"),
   shotsCount: $("shotsCount"),
 };
+
+
+/* ============================================================
+   6. ALLGEMEINE HELFER
+   ============================================================ */
 
 function normalize(text) {
   return String(text ?? "")
@@ -72,7 +113,10 @@ function normalize(text) {
 }
 
 function toNumber(value) {
-  if (value === "" || value === null || value === undefined) return null;
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
   const n = Number(String(value).replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
@@ -80,7 +124,9 @@ function toNumber(value) {
 function formatNumber(value, decimals = 1) {
   const n = Number(value);
 
-  if (!Number.isFinite(n)) return "–";
+  if (!Number.isFinite(n)) {
+    return "–";
+  }
 
   return n.toLocaleString("de-DE", {
     minimumFractionDigits: 0,
@@ -97,31 +143,88 @@ function nowTime() {
 }
 
 function setMessage(text, type = "info") {
+  if (!el.formMessage) return;
+
   el.formMessage.textContent = text;
   el.formMessage.style.color = type === "error" ? "var(--danger)" : "var(--accent-2)";
 }
 
+function showGlobalError(message) {
+  console.error(message);
+
+  if (el.settingsTable) {
+    el.settingsTable.innerHTML = `
+      <tr>
+        <td colspan="8">${escapeHTML(message)}</td>
+      </tr>
+    `;
+  }
+
+  if (el.shotsList) {
+    el.shotsList.innerHTML = `
+      <div class="empty">${escapeHTML(message)}</div>
+    `;
+  }
+
+  setMessage(message, "error");
+}
+
+function escapeHTML(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+
+/* ============================================================
+   7. STARTDATUM / UHRZEIT
+   ============================================================ */
+
 function setToday() {
   const now = new Date();
 
-  el.todayLabel.textContent = now.toLocaleDateString("de-DE", {
-    weekday: "short",
-    day: "2-digit",
-    month: "2-digit",
-  });
+  if (el.todayLabel) {
+    el.todayLabel.textContent = now.toLocaleDateString("de-DE", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+    });
+  }
 
-  el.shotDate.value = todayISO();
-  el.shotTime.value = nowTime();
+  if (el.shotDate) {
+    el.shotDate.value = todayISO();
+  }
+
+  if (el.shotTime) {
+    el.shotTime.value = nowTime();
+  }
 }
+
+
+/* ============================================================
+   8. TABS
+   ============================================================ */
 
 function initTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+      document.querySelectorAll(".tab").forEach((b) => {
+        b.classList.remove("active");
+      });
+
+      document.querySelectorAll(".view").forEach((v) => {
+        v.classList.remove("active");
+      });
 
       btn.classList.add("active");
-      $(`view-${btn.dataset.view}`).classList.add("active");
+
+      const view = $(`view-${btn.dataset.view}`);
+      if (view) {
+        view.classList.add("active");
+      }
 
       if (btn.dataset.view === "dashboard") {
         setTimeout(renderDashboard, 30);
@@ -129,6 +232,30 @@ function initTabs() {
     });
   });
 }
+
+function openView(viewName) {
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === viewName);
+  });
+
+  document.querySelectorAll(".view").forEach((view) => {
+    view.classList.remove("active");
+  });
+
+  const target = $(`view-${viewName}`);
+  if (target) {
+    target.classList.add("active");
+  }
+
+  if (viewName === "dashboard") {
+    setTimeout(renderDashboard, 30);
+  }
+}
+
+
+/* ============================================================
+   9. SUPABASE LADEN
+   ============================================================ */
 
 async function loadSettings() {
   const { data, error } = await supabaseClient
@@ -139,12 +266,13 @@ async function loadSettings() {
     .order("mahlgrad", { ascending: true });
 
   if (error) {
-    console.error(error);
-    alert("Mahlgrad-Daten konnten nicht geladen werden. Prüfe Supabase URL/Key, Tabelle und Policies.");
+    console.error("Fehler beim Laden der Mahlgrade:", error);
+    showGlobalError("Mahlgrad-Daten konnten nicht geladen werden. Prüfe Supabase-Key, Tabelle und Policies.");
     return;
   }
 
   state.settings = data || [];
+
   renderSettings();
   renderSettingSelect();
 }
@@ -157,12 +285,13 @@ async function loadShots() {
     .order("shot_time", { ascending: false });
 
   if (error) {
-    console.error(error);
-    alert("Shots konnten nicht geladen werden. Prüfe Supabase URL/Key, Tabelle und Policies.");
+    console.error("Fehler beim Laden der Shots:", error);
+    showGlobalError("Shots konnten nicht geladen werden. Prüfe Supabase-Key, Tabelle und Policies.");
     return;
   }
 
   state.shots = data || [];
+
   renderDashboard();
   renderShots();
 }
@@ -174,71 +303,49 @@ async function loadFavorites() {
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error(error);
+    console.error("Fehler beim Laden der Favoriten:", error);
     return;
   }
 
   state.favorites = data || [];
+
   renderFavorites();
 }
 
+async function reloadAllData() {
+  await Promise.all([
+    loadSettings(),
+    loadShots(),
+    loadFavorites(),
+  ]);
+}
+
+
+/* ============================================================
+   10. MAHLGRAD-DATENBANK
+   ============================================================ */
+
 function renderSettingSelect() {
+  if (!el.settingSelect) return;
+
   el.settingSelect.innerHTML = `<option value="">Manuell eintragen</option>`;
 
   state.settings.forEach((item) => {
     const opt = document.createElement("option");
+
     opt.value = item.id;
     opt.textContent = `${item.marke || "?"} – ${item.bohne || "?"} | Mahlgrad ${formatNumber(item.mahlgrad)}`;
+
     el.settingSelect.appendChild(opt);
   });
 }
 
-function renderFavorites() {
-  el.favoriteSelect.innerHTML = `<option value="">Kein Favorit</option>`;
-
-  state.favorites.forEach((item) => {
-    const opt = document.createElement("option");
-    opt.value = item.id;
-    opt.textContent = item.name || `${item.marke || ""} ${item.bohne || ""}`.trim() || "Favorit";
-    el.favoriteSelect.appendChild(opt);
-  });
-}
-
-function fillFormFromSetting(item) {
-  if (!item) return;
-
-  el.marke.value = item.marke || "";
-  el.bohne.value = item.bohne || "";
-  el.roestgrad.value = item.roestgrad || "";
-  el.zusammensetzung.value = item.zusammensetzung || "";
-  el.mahlgrad.value = item.mahlgrad ?? "";
-  el.extractionTime.value = item.extraktionszeit_36g_s ?? "";
-  el.pressure.value = item.druck_bar ?? "";
-  el.tasteNotes.value = item.geschmack || "";
-
-  if (!el.dose.value) el.dose.value = "18";
-  if (!el.yield.value) el.yield.value = "36";
-}
-
-function fillFormFromFavorite(item) {
-  if (!item) return;
-
-  el.marke.value = item.marke || "";
-  el.bohne.value = item.bohne || "";
-  el.roestgrad.value = item.roestgrad || "";
-  el.zusammensetzung.value = item.zusammensetzung || "";
-  el.dose.value = item.dose_g ?? "18";
-  el.yield.value = item.yield_g ?? "36";
-  el.mahlgrad.value = item.mahlgrad ?? "";
-  el.extractionTime.value = item.extraction_time_s ?? "";
-  el.pressure.value = item.pressure_bar ?? "";
-  el.temperature.value = item.temperature_c ?? "";
-  el.tasteNotes.value = item.taste_notes || "";
-}
-
 function settingMatches(item) {
   const q = normalize(state.settingsSearch);
-  if (!q) return true;
+
+  if (!q) {
+    return true;
+  }
 
   const haystack = normalize([
     item.marke,
@@ -255,7 +362,10 @@ function settingMatches(item) {
 }
 
 function renderSettings() {
+  if (!el.settingsTable || !el.settingsCount) return;
+
   const items = state.settings.filter(settingMatches);
+
   el.settingsCount.textContent = `${items.length} Einträge`;
   el.settingsTable.innerHTML = "";
 
@@ -279,7 +389,11 @@ function renderSettings() {
       <td>${formatNumber(item.extraktionszeit_36g_s)} s</td>
       <td>${formatNumber(item.druck_bar)} Bar</td>
       <td>${escapeHTML(item.geschmack || "–")}</td>
-      <td><button class="row-btn" data-setting-id="${item.id}">Nutzen</button></td>
+      <td>
+        <button class="row-btn" data-setting-id="${item.id}">
+          Nutzen
+        </button>
+      </td>
     `;
 
     el.settingsTable.appendChild(tr);
@@ -288,6 +402,7 @@ function renderSettings() {
   el.settingsTable.querySelectorAll("[data-setting-id]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const item = state.settings.find((s) => String(s.id) === String(btn.dataset.settingId));
+
       fillFormFromSetting(item);
       openView("shot");
       setMessage("Vorlage übernommen. Du kannst den Shot jetzt speichern.");
@@ -295,9 +410,203 @@ function renderSettings() {
   });
 }
 
+
+/* ============================================================
+   11. FAVORITEN
+   ============================================================ */
+
+function renderFavorites() {
+  if (!el.favoriteSelect) return;
+
+  el.favoriteSelect.innerHTML = `<option value="">Kein Favorit</option>`;
+
+  state.favorites.forEach((item) => {
+    const opt = document.createElement("option");
+
+    opt.value = item.id;
+    opt.textContent = item.name || `${item.marke || ""} ${item.bohne || ""}`.trim() || "Favorit";
+
+    el.favoriteSelect.appendChild(opt);
+  });
+}
+
+function fillFormFromSetting(item) {
+  if (!item) return;
+
+  el.marke.value = item.marke || "";
+  el.bohne.value = item.bohne || "";
+  el.roestgrad.value = item.roestgrad || "";
+  el.zusammensetzung.value = item.zusammensetzung || "";
+  el.mahlgrad.value = item.mahlgrad ?? "";
+  el.extractionTime.value = item.extraktionszeit_36g_s ?? "";
+  el.pressure.value = item.druck_bar ?? "";
+  el.tasteNotes.value = item.geschmack || "";
+
+  if (!el.dose.value) {
+    el.dose.value = "18";
+  }
+
+  if (!el.yield.value) {
+    el.yield.value = "36";
+  }
+}
+
+function fillFormFromFavorite(item) {
+  if (!item) return;
+
+  el.marke.value = item.marke || "";
+  el.bohne.value = item.bohne || "";
+  el.roestgrad.value = item.roestgrad || "";
+  el.zusammensetzung.value = item.zusammensetzung || "";
+  el.dose.value = item.dose_g ?? "18";
+  el.yield.value = item.yield_g ?? "36";
+  el.mahlgrad.value = item.mahlgrad ?? "";
+  el.extractionTime.value = item.extraction_time_s ?? "";
+  el.pressure.value = item.pressure_bar ?? "";
+  el.temperature.value = item.temperature_c ?? "";
+  el.tasteNotes.value = item.taste_notes || "";
+}
+
+
+/* ============================================================
+   12. FORMULAR LESEN / SPEICHERN
+   ============================================================ */
+
+function readForm() {
+  const rawTime = el.shotTime.value || nowTime();
+  const shotTime = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
+
+  return {
+    shot_date: el.shotDate.value || todayISO(),
+    shot_time: shotTime,
+
+    marke: el.marke.value.trim() || null,
+    bohne: el.bohne.value.trim() || null,
+    roestgrad: el.roestgrad.value.trim() || null,
+    zusammensetzung: el.zusammensetzung.value.trim() || null,
+
+    dose_g: toNumber(el.dose.value),
+    yield_g: toNumber(el.yield.value),
+
+    mahlgrad: toNumber(el.mahlgrad.value),
+    extraction_time_s: toNumber(el.extractionTime.value),
+    pressure_bar: toNumber(el.pressure.value),
+    temperature_c: toNumber(el.temperature.value),
+
+    rating: toNumber(el.rating.value),
+
+    taste_notes: el.tasteNotes.value.trim() || null,
+  };
+}
+
+async function saveShot() {
+  const payload = readForm();
+
+  if (payload.mahlgrad === null) {
+    setMessage("Bitte mindestens den Mahlgrad eintragen.", "error");
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from(SHOTS_TABLE)
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Fehler beim Speichern des Shots:", error);
+    setMessage(`Speichern fehlgeschlagen: ${error.message}`, "error");
+    return;
+  }
+
+  console.log("Shot gespeichert:", data);
+
+  setMessage("Shot gespeichert ✅");
+
+  await loadShots();
+
+  openView("history");
+}
+
+async function saveFavorite() {
+  const shot = readForm();
+
+  const defaultName = `${shot.marke || ""} ${shot.bohne || ""} MG ${formatNumber(shot.mahlgrad)}`.trim();
+
+  const name = prompt("Name für den Favoriten?", defaultName || "Mein Espresso-Favorit");
+
+  if (!name) {
+    return;
+  }
+
+  const payload = {
+    name,
+    marke: shot.marke,
+    bohne: shot.bohne,
+    roestgrad: shot.roestgrad,
+    zusammensetzung: shot.zusammensetzung,
+    dose_g: shot.dose_g,
+    yield_g: shot.yield_g,
+    mahlgrad: shot.mahlgrad,
+    extraction_time_s: shot.extraction_time_s,
+    pressure_bar: shot.pressure_bar,
+    temperature_c: shot.temperature_c,
+    taste_notes: shot.taste_notes,
+  };
+
+  const { data, error } = await supabaseClient
+    .from(FAVORITES_TABLE)
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Fehler beim Speichern des Favoriten:", error);
+    setMessage(`Favorit konnte nicht gespeichert werden: ${error.message}`, "error");
+    return;
+  }
+
+  console.log("Favorit gespeichert:", data);
+
+  setMessage("Favorit gespeichert ⭐");
+
+  await loadFavorites();
+}
+
+function resetForm() {
+  el.settingSelect.value = "";
+  el.favoriteSelect.value = "";
+
+  el.marke.value = "";
+  el.bohne.value = "";
+  el.roestgrad.value = "";
+  el.zusammensetzung.value = "";
+
+  el.dose.value = "18";
+  el.yield.value = "36";
+
+  el.mahlgrad.value = "";
+  el.extractionTime.value = "";
+  el.pressure.value = "";
+  el.temperature.value = "";
+  el.rating.value = "";
+  el.tasteNotes.value = "";
+
+  setToday();
+  setMessage("");
+}
+
+
+/* ============================================================
+   13. SHOT VERLAUF
+   ============================================================ */
+
 function shotMatches(item) {
   const q = normalize(state.historySearch);
-  if (!q) return true;
+
+  if (!q) {
+    return true;
+  }
 
   const haystack = normalize([
     item.shot_date,
@@ -320,12 +629,17 @@ function shotMatches(item) {
 }
 
 function renderShots() {
+  if (!el.shotsList || !el.shotsCount) return;
+
   const shots = state.shots.filter(shotMatches);
+
   el.shotsCount.textContent = `${shots.length} Shots`;
   el.shotsList.innerHTML = "";
 
   if (!shots.length) {
-    el.shotsList.innerHTML = `<div class="empty">Noch keine passenden Shots gespeichert.</div>`;
+    el.shotsList.innerHTML = `
+      <div class="empty">Noch keine passenden Shots gespeichert.</div>
+    `;
     return;
   }
 
@@ -347,6 +661,7 @@ function renderShots() {
         <span class="pill">⏱️ ${formatNumber(shot.extraction_time_s)} s</span>
         <span class="pill">🧭 ${formatNumber(shot.pressure_bar)} Bar</span>
         <span class="pill">⚖️ ${formatNumber(shot.dose_g)}g → ${formatNumber(shot.yield_g)}g</span>
+        <span class="pill">🌡️ ${formatNumber(shot.temperature_c)} °C</span>
         <span class="pill">⭐ ${shot.rating || "–"}/5</span>
       </div>
 
@@ -357,24 +672,63 @@ function renderShots() {
   });
 }
 
+function formatShotDate(date, time) {
+  if (!date) {
+    return "–";
+  }
+
+  const d = new Date(`${date}T${time || "00:00:00"}`);
+
+  return d.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatShortDate(date) {
+  if (!date) {
+    return "";
+  }
+
+  const d = new Date(`${date}T00:00:00`);
+
+  return d.toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+
+/* ============================================================
+   14. DASHBOARD
+   ============================================================ */
+
 function renderDashboard() {
   const shots = [...state.shots].sort((a, b) => {
     const aa = `${a.shot_date || ""} ${a.shot_time || ""}`;
     const bb = `${b.shot_date || ""} ${b.shot_time || ""}`;
+
     return aa.localeCompare(bb);
   });
 
   if (!shots.length) {
     el.bestRating.textContent = "–";
     el.bestRatingSub.textContent = "Noch keine Shots";
+
     el.avgTime.textContent = "–";
     el.avgPressure.textContent = "–";
+
     el.lastGrind.textContent = "–";
     el.lastShotSub.textContent = "Noch kein Verlauf";
+
     el.recommendation.textContent = "Trage ein paar Shots ein, dann kann die App erkennen, welcher Mahlgrad bei welcher Bohne am besten funktioniert.";
 
     drawLineChart(el.timeChart, [], "s");
     drawLineChart(el.pressureChart, [], "Bar");
+
     return;
   }
 
@@ -389,11 +743,17 @@ function renderDashboard() {
     el.bestRatingSub.textContent = "Noch keine Bewertung";
   }
 
-  const times = shots.map((s) => Number(s.extraction_time_s)).filter(Number.isFinite);
-  const pressures = shots.map((s) => Number(s.pressure_bar)).filter(Number.isFinite);
+  const times = shots
+    .map((s) => Number(s.extraction_time_s))
+    .filter(Number.isFinite);
+
+  const pressures = shots
+    .map((s) => Number(s.pressure_bar))
+    .filter(Number.isFinite);
 
   const avg = (arr) => {
     if (!arr.length) return null;
+
     return arr.reduce((a, b) => a + b, 0) / arr.length;
   };
 
@@ -404,6 +764,7 @@ function renderDashboard() {
   el.avgPressure.textContent = avgPressureValue === null ? "–" : `${formatNumber(avgPressureValue)} Bar`;
 
   const last = shots[shots.length - 1];
+
   el.lastGrind.textContent = formatNumber(last.mahlgrad);
   el.lastShotSub.textContent = `${last.marke || "–"} · ${last.bohne || "–"}`;
 
@@ -447,28 +808,35 @@ function buildRecommendation(shots) {
   return `Aktuell sieht ${best.marke || "diese Rösterei"} – ${best.bohne || "diese Bohne"} mit Mahlgrad ${formatNumber(best.mahlgrad)}, ${formatNumber(best.extraction_time_s)} s und ${formatNumber(best.pressure_bar)} Bar am besten aus.${taste}`;
 }
 
+
+/* ============================================================
+   15. CANVAS CHARTS
+   ============================================================ */
+
 function drawLineChart(canvas, points, unit) {
+  if (!canvas) return;
+
   const ctx = canvas.getContext("2d");
   const ratio = window.devicePixelRatio || 1;
   const width = canvas.clientWidth || 400;
-  const height = canvas.height || 220;
+  const height = Number(canvas.getAttribute("height")) || 220;
 
   canvas.width = Math.floor(width * ratio);
   canvas.height = Math.floor(height * ratio);
+
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
   ctx.clearRect(0, 0, width, height);
-
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = "rgba(255,247,236,0.14)";
-  ctx.lineWidth = 1;
 
   const pad = 34;
   const chartW = width - pad * 2;
   const chartH = height - pad * 2;
 
+  ctx.strokeStyle = "rgba(255,247,236,0.14)";
+  ctx.lineWidth = 1;
+
   for (let i = 0; i <= 4; i++) {
     const y = pad + (chartH / 4) * i;
+
     ctx.beginPath();
     ctx.moveTo(pad, y);
     ctx.lineTo(width - pad, y);
@@ -485,11 +853,13 @@ function drawLineChart(canvas, points, unit) {
 
   if (points.length === 1) {
     const p = points[0];
+
     ctx.fillText(`${formatNumber(p.value)} ${unit}`, pad, height / 2);
     return;
   }
 
   const values = points.map((p) => p.value);
+
   let min = Math.min(...values);
   let max = Math.max(...values);
 
@@ -509,8 +879,11 @@ function drawLineChart(canvas, points, unit) {
     const x = xFor(i);
     const y = yFor(p.value);
 
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
   });
 
   ctx.stroke();
@@ -531,209 +904,102 @@ function drawLineChart(canvas, points, unit) {
   ctx.fillText(`${formatNumber(min)} ${unit}`, pad, height - 10);
 }
 
-function readForm() {
-  return {
-    shot_date: el.shotDate.value || todayISO(),
-    shot_time: (el.shotTime.value || nowTime()) + ":00",
-    marke: el.marke.value.trim() || null,
-    bohne: el.bohne.value.trim() || null,
-    roestgrad: el.roestgrad.value.trim() || null,
-    zusammensetzung: el.zusammensetzung.value.trim() || null,
-    dose_g: toNumber(el.dose.value),
-    yield_g: toNumber(el.yield.value),
-    mahlgrad: toNumber(el.mahlgrad.value),
-    extraction_time_s: toNumber(el.extractionTime.value),
-    pressure_bar: toNumber(el.pressure.value),
-    temperature_c: toNumber(el.temperature.value),
-    rating: toNumber(el.rating.value),
-    taste_notes: el.tasteNotes.value.trim() || null,
-  };
-}
 
-async function saveShot() {
-  const payload = readForm();
-
-  if (!payload.mahlgrad && payload.mahlgrad !== 0) {
-    setMessage("Bitte mindestens den Mahlgrad eintragen.", "error");
-    return;
-  }
-
-  const { error } = await supabaseClient
-    .from(SHOTS_TABLE)
-    .insert(payload);
-
-  if (error) {
-    console.error(error);
-    setMessage("Speichern fehlgeschlagen. Prüfe Tabelle/Policies.", "error");
-    return;
-  }
-
-  setMessage("Shot gespeichert ✅");
-  await loadShots();
-}
-
-async function saveFavorite() {
-  const shot = readForm();
-
-  const name = prompt(
-    "Name für den Favoriten?",
-    `${shot.marke || ""} ${shot.bohne || ""} MG ${formatNumber(shot.mahlgrad)}`.trim()
-  );
-
-  if (!name) return;
-
-  const payload = {
-    name,
-    marke: shot.marke,
-    bohne: shot.bohne,
-    roestgrad: shot.roestgrad,
-    zusammensetzung: shot.zusammensetzung,
-    dose_g: shot.dose_g,
-    yield_g: shot.yield_g,
-    mahlgrad: shot.mahlgrad,
-    extraction_time_s: shot.extraction_time_s,
-    pressure_bar: shot.pressure_bar,
-    temperature_c: shot.temperature_c,
-    taste_notes: shot.taste_notes,
-  };
-
-  const { error } = await supabaseClient
-    .from(FAVORITES_TABLE)
-    .insert(payload);
-
-  if (error) {
-    console.error(error);
-    setMessage("Favorit konnte nicht gespeichert werden.", "error");
-    return;
-  }
-
-  setMessage("Favorit gespeichert ⭐");
-  await loadFavorites();
-}
-
-function resetForm() {
-  el.settingSelect.value = "";
-  el.favoriteSelect.value = "";
-  el.marke.value = "";
-  el.bohne.value = "";
-  el.roestgrad.value = "";
-  el.zusammensetzung.value = "";
-  el.dose.value = "18";
-  el.yield.value = "36";
-  el.mahlgrad.value = "";
-  el.extractionTime.value = "";
-  el.pressure.value = "";
-  el.temperature.value = "";
-  el.rating.value = "";
-  el.tasteNotes.value = "";
-
-  setToday();
-  setMessage("");
-}
-
-function openView(viewName) {
-  document.querySelectorAll(".tab").forEach((b) => {
-    b.classList.toggle("active", b.dataset.view === viewName);
-  });
-
-  document.querySelectorAll(".view").forEach((v) => {
-    v.classList.remove("active");
-  });
-
-  $(`view-${viewName}`).classList.add("active");
-}
-
-function formatShotDate(date, time) {
-  if (!date) return "–";
-
-  const d = new Date(`${date}T${time || "00:00:00"}`);
-
-  return d.toLocaleString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatShortDate(date) {
-  if (!date) return "";
-
-  const d = new Date(`${date}T00:00:00`);
-
-  return d.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-  });
-}
-
-function escapeHTML(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+/* ============================================================
+   16. EVENTS
+   ============================================================ */
 
 function initEvents() {
-  el.settingSelect.addEventListener("change", () => {
-    const item = state.settings.find((s) => String(s.id) === String(el.settingSelect.value));
-    fillFormFromSetting(item);
-  });
+  if (el.settingSelect) {
+    el.settingSelect.addEventListener("change", () => {
+      const item = state.settings.find((s) => String(s.id) === String(el.settingSelect.value));
+      fillFormFromSetting(item);
+    });
+  }
 
-  el.favoriteSelect.addEventListener("change", () => {
-    const item = state.favorites.find((s) => String(s.id) === String(el.favoriteSelect.value));
-    fillFormFromFavorite(item);
-  });
+  if (el.favoriteSelect) {
+    el.favoriteSelect.addEventListener("change", () => {
+      const item = state.favorites.find((s) => String(s.id) === String(el.favoriteSelect.value));
+      fillFormFromFavorite(item);
+    });
+  }
 
-  $("saveShotBtn").addEventListener("click", saveShot);
-  $("saveFavoriteBtn").addEventListener("click", saveFavorite);
-  $("resetFormBtn").addEventListener("click", resetForm);
+  const saveShotBtn = $("saveShotBtn");
+  if (saveShotBtn) {
+    saveShotBtn.addEventListener("click", saveShot);
+  }
 
-  $("reloadBtn").addEventListener("click", async () => {
-    await loadSettings();
-    await loadShots();
-    await loadFavorites();
-  });
+  const saveFavoriteBtn = $("saveFavoriteBtn");
+  if (saveFavoriteBtn) {
+    saveFavoriteBtn.addEventListener("click", saveFavorite);
+  }
 
-  el.settingsSearch.addEventListener("input", () => {
-    state.settingsSearch = el.settingsSearch.value;
-    renderSettings();
-  });
+  const resetFormBtn = $("resetFormBtn");
+  if (resetFormBtn) {
+    resetFormBtn.addEventListener("click", resetForm);
+  }
 
-  el.historySearch.addEventListener("input", () => {
-    state.historySearch = el.historySearch.value;
-    renderShots();
-  });
+  const reloadBtn = $("reloadBtn");
+  if (reloadBtn) {
+    reloadBtn.addEventListener("click", reloadAllData);
+  }
 
-  $("deleteAllLocalFiltersBtn").addEventListener("click", () => {
-    state.historySearch = "";
-    el.historySearch.value = "";
-    renderShots();
-  });
+  if (el.settingsSearch) {
+    el.settingsSearch.addEventListener("input", () => {
+      state.settingsSearch = el.settingsSearch.value;
+      renderSettings();
+    });
+  }
+
+  if (el.historySearch) {
+    el.historySearch.addEventListener("input", () => {
+      state.historySearch = el.historySearch.value;
+      renderShots();
+    });
+  }
+
+  const deleteAllLocalFiltersBtn = $("deleteAllLocalFiltersBtn");
+  if (deleteAllLocalFiltersBtn) {
+    deleteAllLocalFiltersBtn.addEventListener("click", () => {
+      state.historySearch = "";
+      el.historySearch.value = "";
+      renderShots();
+    });
+  }
 
   window.addEventListener("resize", () => {
     renderDashboard();
   });
 }
 
+
+/* ============================================================
+   17. INITIALISIERUNG
+   ============================================================ */
+
 async function init() {
   initTabs();
   initEvents();
   setToday();
 
-  if (SUPABASE_URL.includes("DEINE_") || SUPABASE_ANON_KEY.includes("DEINE_")) {
-    alert("Bitte zuerst SUPABASE_URL und SUPABASE_ANON_KEY in app.js eintragen.");
+  if (!supabaseClient) {
+    showGlobalError("Supabase konnte nicht initialisiert werden. Prüfe index.html und die Supabase Library.");
     return;
   }
 
-  await Promise.all([
-    loadSettings(),
-    loadShots(),
-    loadFavorites(),
-  ]);
+  if (
+    !SUPABASE_URL ||
+    !SUPABASE_ANON_KEY ||
+    SUPABASE_URL.includes("DEINE_") ||
+    SUPABASE_ANON_KEY.includes("DEINE_") ||
+    SUPABASE_ANON_KEY.includes("HIER_") ||
+    SUPABASE_ANON_KEY.includes("...")
+  ) {
+    showGlobalError("Bitte zuerst den kompletten Supabase-Key in app.js eintragen.");
+    return;
+  }
+
+  await reloadAllData();
 }
 
 init();
