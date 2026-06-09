@@ -4,8 +4,8 @@
    ============================================================ */
 
 // 1) HIER DEINE SUPABASE DATEN EINTRAGEN
-const SUPABASE_URL = "DEINE_SUPABASE_URL";
-const SUPABASE_ANON_KEY = "DEINE_SUPABASE_ANON_KEY";
+const SUPABASE_URL = "https://lrzgcqoqcwicpuuuhaoj.supabase.co";
+const SUPABASE_KEY = "sb_publishable_uunR3UQ9rttiK8dG85IedQ__Tn1duVK";
 
 // 2) Tabellennamen
 const SETTINGS_TABLE = "coffee_grinder_settings";
