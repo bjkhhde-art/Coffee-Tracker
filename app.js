@@ -1,66 +1,38 @@
 /* ============================================================
-   Coffee Tracker – GitHub Pages + Supabase
-   Getränke, Koffein, Mahlgrad, Shot-Daten, Equipment, Statistiken
-   ============================================================ */
-
-
-/* ============================================================
-   1. SUPABASE
+   Coffee Tracker – automatische Mahlgrad-Empfehlungen
+   GitHub Pages + Supabase
    ============================================================ */
 
 const SUPABASE_URL = "https://lrzgcqoqcwicpuuuhaoj.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_uunR3UQ9rttiK8dG85IedQ__Tn1duVK";
 
 const TABLE_ENTRIES = "coffee_entries";
-const TABLE_DRINKS = "coffee_drinks";
-const TABLE_SETTINGS = "coffee_user_settings";
-const TABLE_GRINDER = "coffee_grinder_settings";
 const TABLE_EQUIPMENT = "coffee_equipment";
+const TABLE_SETTINGS = "coffee_user_settings";
 
 const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
-
-/* ============================================================
-   2. STATE
-   ============================================================ */
-
-const DEFAULT_DRINKS = [
-  { name: "Espresso", drink_type: "Espresso", emoji: "☕", default_amount_ml: 30, default_caffeine_mg: 80 },
-  { name: "Doppelter Espresso", drink_type: "Espresso", emoji: "☕", default_amount_ml: 60, default_caffeine_mg: 120 },
-  { name: "Kaffee", drink_type: "Kaffee", emoji: "☕", default_amount_ml: 200, default_caffeine_mg: 95 },
-  { name: "Cappuccino", drink_type: "Milchkaffee", emoji: "🥛", default_amount_ml: 180, default_caffeine_mg: 80 },
-  { name: "Latte Macchiato", drink_type: "Milchkaffee", emoji: "🥛", default_amount_ml: 250, default_caffeine_mg: 80 },
-  { name: "V60", drink_type: "V60", emoji: "🔻", default_amount_ml: 250, default_caffeine_mg: 120 },
-  { name: "French Press", drink_type: "French Press", emoji: "🫙", default_amount_ml: 250, default_caffeine_mg: 110 },
-  { name: "Cold Brew", drink_type: "Cold Brew", emoji: "🧊", default_amount_ml: 250, default_caffeine_mg: 150 },
-  { name: "Entkoffeiniert", drink_type: "Entkoffeiniert", emoji: "🌙", default_amount_ml: 200, default_caffeine_mg: 5 },
-];
-
 const state = {
   isLoading: true,
   entries: [],
-  drinks: [],
-  grinderSettings: [],
   equipment: [],
-  settings: {
-    caffeine_limit_mg: 400,
-    unit: "ml",
-  },
+  recommendations: [],
   editingId: null,
   editingEquipmentId: null,
   filters: {
     date: "",
-    drink: "",
+    coffee: "",
   },
-  grinderSearch: "",
+  settings: {
+    caffeine_limit_mg: 400,
+    target_time_min_s: 25,
+    target_time_max_s: 30,
+    target_pressure_min_bar: 8,
+    target_pressure_max_bar: 10,
+  },
 };
-
-
-/* ============================================================
-   3. DOM
-   ============================================================ */
 
 const $ = (id) => document.getElementById(id);
 
@@ -69,62 +41,66 @@ const el = {
   navToggle: $("navToggle"),
   fabAdd: $("fabAdd"),
 
-  drinkSelect: $("drinkSelect"),
-  quickFavorites: $("quickFavorites"),
+  quickCoffeeButtons: $("quickCoffeeButtons"),
+  recommendationBox: $("recommendationBox"),
+  recommendationTitle: $("recommendationTitle"),
+  recommendationText: $("recommendationText"),
+  applyRecommendationBtn: $("applyRecommendationBtn"),
+
   entryForm: $("entryForm"),
+  coffeeName: $("coffeeName"),
+  coffeeSuggestions: $("coffeeSuggestions"),
+  brewMethod: $("brewMethod"),
+  machineSelect: $("machineSelect"),
+  grinderSelect: $("grinderSelect"),
   entryDate: $("entryDate"),
   entryTime: $("entryTime"),
-  customDrinkName: $("customDrinkName"),
-  drinkEmoji: $("drinkEmoji"),
-  drinkType: $("drinkType"),
-  amountMl: $("amountMl"),
-  caffeineMg: $("caffeineMg"),
+  doseG: $("doseG"),
+  yieldG: $("yieldG"),
   mahlgrad: $("mahlgrad"),
   extractionTime: $("extractionTime"),
   pressureBar: $("pressureBar"),
+  temperatureC: $("temperatureC"),
+  caffeineMg: $("caffeineMg"),
   rating: $("rating"),
   note: $("note"),
 
-  drinkError: $("drinkError"),
-  amountError: $("amountError"),
-  caffeineError: $("caffeineError"),
+  coffeeError: $("coffeeError"),
+  mahlgradError: $("mahlgradError"),
   formError: $("formError"),
   formMessage: $("formMessage"),
-
   saveEntryBtn: $("saveEntryBtn"),
-  saveDrinkBtn: $("saveDrinkBtn"),
+  duplicateLastBtn: $("duplicateLastBtn"),
   cancelEditBtn: $("cancelEditBtn"),
   resetFormBtn: $("resetFormBtn"),
   editBadge: $("editBadge"),
 
-  todayCount: $("todayCount"),
-  todayCaffeine: $("todayCaffeine"),
-  caffeineRemaining: $("caffeineRemaining"),
-  avgDaily: $("avgDaily"),
-  limitText: $("limitText"),
-  overLimitHint: $("overLimitHint"),
-
-  weekCanvas: $("weekCanvas"),
-  weekCompare: $("weekCompare"),
-  trendCanvas: $("trendCanvas"),
-  trendBadge: $("trendBadge"),
-  beanRanking: $("beanRanking"),
-  topRatings: $("topRatings"),
-  methodCanvas: $("methodCanvas"),
-  methodBars: $("methodBars"),
-  peakHour: $("peakHour"),
-  heatmap: $("heatmap"),
+  recommendationsList: $("recommendationsList"),
+  recommendationsCount: $("recommendationsCount"),
 
   filterDate: $("filterDate"),
-  filterDrink: $("filterDrink"),
+  filterCoffee: $("filterCoffee"),
   clearFiltersBtn: $("clearFiltersBtn"),
   deleteAllBtn: $("deleteAllBtn"),
   entriesList: $("entriesList"),
   entriesCount: $("entriesCount"),
 
-  grinderSearch: $("grinderSearch"),
-  grinderTable: $("grinderTable"),
-  grinderCount: $("grinderCount"),
+  todayCount: $("todayCount"),
+  todayCaffeine: $("todayCaffeine"),
+  limitText: $("limitText"),
+  overLimitHint: $("overLimitHint"),
+  avgTime: $("avgTime"),
+  hitRate: $("hitRate"),
+  weekCanvas: $("weekCanvas"),
+  weekCompare: $("weekCompare"),
+  trendCanvas: $("trendCanvas"),
+  trendBadge: $("trendBadge"),
+  coffeeRanking: $("coffeeRanking"),
+  topShots: $("topShots"),
+  methodCanvas: $("methodCanvas"),
+  methodBars: $("methodBars"),
+  heatmap: $("heatmap"),
+  peakHour: $("peakHour"),
 
   equipmentForm: $("equipmentForm"),
   equipmentCategory: $("equipmentCategory"),
@@ -144,7 +120,10 @@ const el = {
   resetEquipmentBtn: $("resetEquipmentBtn"),
 
   limitInput: $("limitInput"),
-  unitSelect: $("unitSelect"),
+  targetTimeMin: $("targetTimeMin"),
+  targetTimeMax: $("targetTimeMax"),
+  targetPressureMin: $("targetPressureMin"),
+  targetPressureMax: $("targetPressureMax"),
   saveSettingsBtn: $("saveSettingsBtn"),
   settingsMessage: $("settingsMessage"),
 
@@ -153,7 +132,7 @@ const el = {
 
 
 /* ============================================================
-   4. HELFER
+   Helper
    ============================================================ */
 
 function todayISO() {
@@ -198,40 +177,19 @@ function escapeHTML(value) {
     .replaceAll("'", "&#039;");
 }
 
-function showToast(message) {
-  if (!el.toast) return;
-
-  el.toast.textContent = message;
-  el.toast.classList.add("show");
-
-  window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => {
-    el.toast.classList.remove("show");
-  }, 2600);
+function formatEntryTime(time) {
+  if (!time) return "–";
+  return String(time).slice(0, 5);
 }
 
-function setFormMessage(message, type = "info") {
-  if (!el.formMessage) return;
-  el.formMessage.textContent = message || "";
-  el.formMessage.style.color = type === "error" ? "var(--danger)" : "var(--accent-light)";
-}
+function formatDateShort(date) {
+  if (!date) return "–";
 
-function setSettingsMessage(message, type = "info") {
-  if (!el.settingsMessage) return;
-  el.settingsMessage.textContent = message || "";
-  el.settingsMessage.style.color = type === "error" ? "var(--danger)" : "var(--accent-light)";
-}
-
-function setEquipmentMessage(message, type = "info") {
-  if (!el.equipmentMessage) return;
-  el.equipmentMessage.textContent = message || "";
-  el.equipmentMessage.style.color = type === "error" ? "var(--danger)" : "var(--accent-light)";
-}
-
-function setButtonLoading(button, isLoading, loadingText, defaultText) {
-  if (!button) return;
-  button.disabled = isLoading;
-  button.textContent = isLoading ? loadingText : defaultText;
+  return new Date(`${date}T00:00:00`).toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
 }
 
 function formatDateHeader(date) {
@@ -253,19 +211,34 @@ function formatDateHeader(date) {
   });
 }
 
-function formatDateShort(date) {
-  if (!date) return "–";
+function showToast(message) {
+  el.toast.textContent = message;
+  el.toast.classList.add("show");
 
-  return new Date(`${date}T00:00:00`).toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-  });
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => {
+    el.toast.classList.remove("show");
+  }, 2600);
 }
 
-function formatEntryTime(time) {
-  if (!time) return "–";
-  return String(time).slice(0, 5);
+function setFormMessage(message, type = "info") {
+  el.formMessage.textContent = message || "";
+  el.formMessage.style.color = type === "error" ? "var(--danger)" : "var(--accent-light)";
+}
+
+function setSettingsMessage(message, type = "info") {
+  el.settingsMessage.textContent = message || "";
+  el.settingsMessage.style.color = type === "error" ? "var(--danger)" : "var(--accent-light)";
+}
+
+function setEquipmentMessage(message, type = "info") {
+  el.equipmentMessage.textContent = message || "";
+  el.equipmentMessage.style.color = type === "error" ? "var(--danger)" : "var(--accent-light)";
+}
+
+function setButtonLoading(button, isLoading, loadingText, defaultText) {
+  button.disabled = isLoading;
+  button.textContent = isLoading ? loadingText : defaultText;
 }
 
 function getLastNDays(count) {
@@ -292,45 +265,15 @@ function getPreviousNDays(count, offset) {
   return days;
 }
 
-function getMethodIcon(entryOrType) {
-  const text = normalize(
-    typeof entryOrType === "string"
-      ? entryOrType
-      : `${entryOrType.drink_type || ""} ${entryOrType.drink_name || ""}`
-  );
+function getMethodIcon(method) {
+  const text = normalize(method);
 
   if (text.includes("espresso")) return "☕";
-  if (text.includes("v60")) return "🔻";
-  if (text.includes("filter")) return "🔻";
+  if (text.includes("v60") || text.includes("filter")) return "🔻";
   if (text.includes("french")) return "🫙";
   if (text.includes("cold")) return "🧊";
-  if (text.includes("cappuccino")) return "🥛";
-  if (text.includes("latte")) return "🥛";
-  if (text.includes("entkoff")) return "🌙";
+  if (text.includes("cappuccino") || text.includes("latte")) return "🥛";
   return "☕";
-}
-
-function getMethodName(entry) {
-  return entry.drink_type || entry.drink_name || "Unbekannt";
-}
-
-function getRatingClass(rating) {
-  const n = Number(rating);
-
-  if (!Number.isFinite(n)) return "rating-none";
-  if (n >= 4) return "rating-good";
-  if (n >= 3) return "rating-mid";
-  return "rating-bad";
-}
-
-function getRoastClass(roast) {
-  const text = normalize(roast);
-
-  if (text.includes("light") || text.includes("hell")) return "roast-light";
-  if (text.includes("medium")) return "roast-medium";
-  if (text.includes("dark") || text.includes("dunkel")) return "roast-dark";
-
-  return "roast-unknown";
 }
 
 function getEquipmentIcon(category) {
@@ -346,20 +289,24 @@ function getEquipmentIcon(category) {
   return "🔧";
 }
 
+function getEquipmentById(id) {
+  if (!id) return null;
+  return state.equipment.find((item) => String(item.id) === String(id)) || null;
+}
+
+function equipmentName(id) {
+  const item = getEquipmentById(id);
+  if (!item) return "Keine Mühle";
+  return [item.brand, item.model || item.name].filter(Boolean).join(" ");
+}
+
 function sumCaffeine(entries) {
   return entries.reduce((sum, entry) => sum + (Number(entry.caffeine_mg) || 0), 0);
 }
 
-function sumCaffeineForDays(days) {
-  return days.reduce((sum, day) => {
-    const entries = state.entries.filter((entry) => entry.entry_date === day);
-    return sum + sumCaffeine(entries);
-  }, 0);
-}
-
 
 /* ============================================================
-   5. INIT
+   Init
    ============================================================ */
 
 async function init() {
@@ -385,28 +332,23 @@ async function init() {
 
   await reloadAll();
 
-  setTimeout(() => {
-    el.drinkSelect?.focus();
-  }, 350);
+  setTimeout(() => el.coffeeName?.focus(), 350);
 }
 
 function initFormDefaults() {
   el.entryDate.value = todayISO();
   el.entryTime.value = nowTime();
-
-  if (el.equipmentCategory) {
-    el.equipmentCategory.value = "Maschine";
-  }
+  el.doseG.value = "18";
+  el.yieldG.value = "36";
+  el.caffeineMg.value = "80";
 }
 
 function initTabs() {
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      openView(tab.dataset.view);
-    });
+    tab.addEventListener("click", () => openView(tab.dataset.view));
   });
 
-  el.navToggle?.addEventListener("click", () => {
+  el.navToggle.addEventListener("click", () => {
     el.tabs.classList.toggle("open");
   });
 }
@@ -425,61 +367,68 @@ function openView(viewName) {
 
   el.tabs.classList.remove("open");
 
-  if (viewName === "dashboard") renderDashboard();
+  if (viewName === "recommendations") renderRecommendations();
   if (viewName === "history") renderEntries();
-  if (viewName === "grinder") renderGrinderSettings();
+  if (viewName === "dashboard") renderDashboard();
   if (viewName === "equipment") renderEquipment();
 }
 
+function initEvents() {
+  el.entryForm.addEventListener("submit", saveEntry);
+  el.resetFormBtn.addEventListener("click", resetForm);
+  el.cancelEditBtn.addEventListener("click", cancelEdit);
+  el.duplicateLastBtn.addEventListener("click", duplicateLastShot);
 
-/* ============================================================
-   6. SKELETON LOADING
-   ============================================================ */
+  el.coffeeName.addEventListener("input", updateCurrentRecommendation);
+  el.grinderSelect.addEventListener("change", updateCurrentRecommendation);
+  el.brewMethod.addEventListener("change", () => {
+    el.caffeineMg.value = methodDefaultCaffeine(el.brewMethod.value);
+  });
 
-function renderSkeletons() {
-  if (el.entriesList) {
-    el.entriesList.innerHTML = `
-      <div class="skeleton skeleton-line"></div>
-      <div class="skeleton skeleton-card"></div>
-      <div class="skeleton skeleton-card"></div>
-      <div class="skeleton skeleton-card"></div>
-    `;
-  }
+  el.applyRecommendationBtn.addEventListener("click", applyCurrentRecommendation);
 
-  if (el.beanRanking) {
-    el.beanRanking.innerHTML = `
-      <div class="skeleton skeleton-list"></div>
-      <div class="skeleton skeleton-list"></div>
-      <div class="skeleton skeleton-list"></div>
-    `;
-  }
+  el.filterDate.addEventListener("change", () => {
+    state.filters.date = el.filterDate.value;
+    renderEntries();
+  });
 
-  if (el.topRatings) {
-    el.topRatings.innerHTML = `
-      <div class="skeleton skeleton-list"></div>
-      <div class="skeleton skeleton-list"></div>
-      <div class="skeleton skeleton-list"></div>
-    `;
-  }
+  el.filterCoffee.addEventListener("change", () => {
+    state.filters.coffee = el.filterCoffee.value;
+    renderEntries();
+  });
 
-  if (el.grinderTable) {
-    el.grinderTable.innerHTML = `
-      <tr><td colspan="8"><div class="skeleton skeleton-card"></div></td></tr>
-      <tr><td colspan="8"><div class="skeleton skeleton-card"></div></td></tr>
-    `;
-  }
+  el.clearFiltersBtn.addEventListener("click", () => {
+    state.filters.date = "";
+    state.filters.coffee = "";
+    el.filterDate.value = "";
+    el.filterCoffee.value = "";
+    renderEntries();
+  });
 
-  if (el.equipmentList) {
-    el.equipmentList.innerHTML = `
-      <div class="skeleton skeleton-card"></div>
-      <div class="skeleton skeleton-card"></div>
-    `;
-  }
+  el.deleteAllBtn.addEventListener("click", deleteAllEntries);
+
+  el.equipmentForm.addEventListener("submit", saveEquipment);
+  el.resetEquipmentBtn.addEventListener("click", resetEquipmentForm);
+  el.cancelEquipmentEditBtn.addEventListener("click", resetEquipmentForm);
+
+  el.saveSettingsBtn.addEventListener("click", saveSettings);
+
+  el.fabAdd.addEventListener("click", () => {
+    cancelEdit();
+    openView("add");
+    setTimeout(() => el.coffeeName?.focus(), 80);
+  });
+
+  window.addEventListener("resize", () => {
+    if ($("view-dashboard").classList.contains("active")) {
+      renderDashboard();
+    }
+  });
 }
 
 
 /* ============================================================
-   7. SUPABASE LOAD
+   Load
    ============================================================ */
 
 async function reloadAll() {
@@ -488,11 +437,11 @@ async function reloadAll() {
 
   await Promise.all([
     loadSettings(),
-    loadDrinks(),
     loadEntries(),
-    loadGrinderSettings(),
     loadEquipment(),
   ]);
+
+  state.recommendations = buildRecommendations(state.entries);
 
   state.isLoading = false;
   renderAll();
@@ -513,33 +462,18 @@ async function loadSettings() {
   if (data) {
     state.settings = {
       caffeine_limit_mg: Number(data.caffeine_limit_mg) || 400,
-      unit: data.unit || "ml",
+      target_time_min_s: Number(data.target_time_min_s) || 25,
+      target_time_max_s: Number(data.target_time_max_s) || 30,
+      target_pressure_min_bar: Number(data.target_pressure_min_bar) || 8,
+      target_pressure_max_bar: Number(data.target_pressure_max_bar) || 10,
     };
   }
 
   el.limitInput.value = state.settings.caffeine_limit_mg;
-  el.unitSelect.value = state.settings.unit;
-}
-
-async function loadDrinks() {
-  const { data, error } = await supabaseClient
-    .from(TABLE_DRINKS)
-    .select("*")
-    .order("name", { ascending: true });
-
-  if (error) {
-    console.error("Getränke konnten nicht geladen werden:", error);
-    state.drinks = [...DEFAULT_DRINKS];
-    return;
-  }
-
-  const byName = new Map();
-
-  [...DEFAULT_DRINKS, ...(data || [])].forEach((drink) => {
-    byName.set(normalize(drink.name), drink);
-  });
-
-  state.drinks = Array.from(byName.values());
+  el.targetTimeMin.value = state.settings.target_time_min_s;
+  el.targetTimeMax.value = state.settings.target_time_max_s;
+  el.targetPressureMin.value = state.settings.target_pressure_min_bar;
+  el.targetPressureMax.value = state.settings.target_pressure_max_bar;
 }
 
 async function loadEntries() {
@@ -550,30 +484,13 @@ async function loadEntries() {
     .order("entry_time", { ascending: false });
 
   if (error) {
-    console.error("Einträge konnten nicht geladen werden:", error);
-    showToast("Einträge konnten nicht geladen werden.");
+    console.error("Shots konnten nicht geladen werden:", error);
+    showToast("Shots konnten nicht geladen werden.");
     state.entries = [];
     return;
   }
 
   state.entries = data || [];
-}
-
-async function loadGrinderSettings() {
-  const { data, error } = await supabaseClient
-    .from(TABLE_GRINDER)
-    .select("*")
-    .order("marke", { ascending: true })
-    .order("bohne", { ascending: true })
-    .order("mahlgrad", { ascending: true });
-
-  if (error) {
-    console.error("Mahlgrad-Daten konnten nicht geladen werden:", error);
-    state.grinderSettings = [];
-    return;
-  }
-
-  state.grinderSettings = data || [];
 }
 
 async function loadEquipment() {
@@ -594,263 +511,526 @@ async function loadEquipment() {
 
 
 /* ============================================================
-   8. EVENTS
-   ============================================================ */
-
-function initEvents() {
-  el.entryForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    await saveEntry();
-  });
-
-  el.drinkSelect.addEventListener("change", () => {
-    const drink = getDrinkByName(el.drinkSelect.value);
-    fillFormFromDrink(drink);
-    validateEntryForm(false);
-  });
-
-  [el.customDrinkName, el.amountMl, el.caffeineMg].forEach((input) => {
-    input.addEventListener("input", () => validateEntryForm(false));
-  });
-
-  el.saveDrinkBtn.addEventListener("click", saveDrinkTemplate);
-  el.resetFormBtn.addEventListener("click", resetForm);
-  el.cancelEditBtn.addEventListener("click", cancelEdit);
-
-  el.filterDate.addEventListener("change", () => {
-    state.filters.date = el.filterDate.value;
-    renderEntries();
-  });
-
-  el.filterDrink.addEventListener("change", () => {
-    state.filters.drink = el.filterDrink.value;
-    renderEntries();
-  });
-
-  el.clearFiltersBtn.addEventListener("click", () => {
-    state.filters.date = "";
-    state.filters.drink = "";
-    el.filterDate.value = "";
-    el.filterDrink.value = "";
-    renderEntries();
-  });
-
-  el.deleteAllBtn.addEventListener("click", deleteAllEntries);
-
-  el.grinderSearch.addEventListener("input", () => {
-    state.grinderSearch = el.grinderSearch.value;
-    renderGrinderSettings();
-  });
-
-  el.equipmentForm.addEventListener("submit", saveEquipment);
-  el.resetEquipmentBtn.addEventListener("click", resetEquipmentForm);
-  el.cancelEquipmentEditBtn.addEventListener("click", resetEquipmentForm);
-
-  el.saveSettingsBtn.addEventListener("click", saveSettings);
-
-  el.fabAdd.addEventListener("click", () => {
-    cancelEdit();
-    openView("add");
-    setTimeout(() => el.drinkSelect?.focus(), 80);
-  });
-
-  window.addEventListener("resize", () => {
-    if ($("view-dashboard").classList.contains("active")) {
-      renderDashboard();
-    }
-  });
-}
-
-
-/* ============================================================
-   9. RENDER ALL
+   Render
    ============================================================ */
 
 function renderAll() {
-  renderDrinkSelect();
-  renderQuickFavorites();
-  renderFilterDrinkSelect();
-  renderDashboard();
+  state.recommendations = buildRecommendations(state.entries);
+
+  renderEquipmentSelects();
+  renderCoffeeSuggestions();
+  renderQuickCoffeeButtons();
+  renderRecommendations();
   renderEntries();
-  renderGrinderSettings();
+  renderDashboard();
   renderEquipment();
+  updateCurrentRecommendation();
 }
 
+function renderSkeletons() {
+  el.entriesList.innerHTML = `
+    <div class="skeleton skeleton-line"></div>
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+  `;
 
-/* ============================================================
-   10. GETRÄNKE
-   ============================================================ */
+  el.recommendationsList.innerHTML = `
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+  `;
 
-function renderDrinkSelect() {
-  const current = el.drinkSelect.value;
+  el.equipmentList.innerHTML = `
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+  `;
+}
 
-  el.drinkSelect.innerHTML = "";
+function renderEquipmentSelects() {
+  const currentMachine = el.machineSelect.value;
+  const currentGrinder = el.grinderSelect.value;
 
-  state.drinks.forEach((drink) => {
+  const machines = state.equipment.filter((item) =>
+    item.is_active && normalize(item.category).includes("maschine")
+  );
+
+  const grinders = state.equipment.filter((item) =>
+    item.is_active && normalize(item.category).includes("muhle")
+  );
+
+  el.machineSelect.innerHTML = `<option value="">Keine Maschine gewählt</option>`;
+  el.grinderSelect.innerHTML = `<option value="">Keine Mühle gewählt</option>`;
+
+  machines.forEach((item) => {
     const option = document.createElement("option");
-    option.value = drink.name;
-    option.textContent = `${getMethodIcon(drink.drink_type || drink.name)} ${drink.name}`;
-    el.drinkSelect.appendChild(option);
+    option.value = item.id;
+    option.textContent = equipmentLabel(item);
+    el.machineSelect.appendChild(option);
   });
 
-  if (current && state.drinks.some((drink) => drink.name === current)) {
-    el.drinkSelect.value = current;
-  } else if (state.drinks.length) {
-    el.drinkSelect.value = state.drinks[0].name;
-    fillFormFromDrink(state.drinks[0]);
+  grinders.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = equipmentLabel(item);
+    el.grinderSelect.appendChild(option);
+  });
+
+  if (currentMachine) el.machineSelect.value = currentMachine;
+  if (currentGrinder) el.grinderSelect.value = currentGrinder;
+
+  if (!el.machineSelect.value && machines.length === 1) {
+    el.machineSelect.value = machines[0].id;
+  }
+
+  if (!el.grinderSelect.value && grinders.length === 1) {
+    el.grinderSelect.value = grinders[0].id;
   }
 }
 
-function renderQuickFavorites() {
-  el.quickFavorites.innerHTML = "";
+function equipmentLabel(item) {
+  return [item.brand, item.model || item.name].filter(Boolean).join(" ");
+}
 
-  state.drinks.slice(0, 6).forEach((drink) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "quick-btn";
-    button.innerHTML = `
-      <span>${escapeHTML(getMethodIcon(drink.drink_type || drink.name))}</span>
-      <strong>${escapeHTML(drink.name)}</strong>
-      <small>${formatNumber(drink.default_caffeine_mg)} mg</small>
+function renderCoffeeSuggestions() {
+  const coffees = Array.from(
+    new Set(state.entries.map((entry) => entry.drink_name).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, "de"));
+
+  el.coffeeSuggestions.innerHTML = "";
+  el.filterCoffee.innerHTML = `<option value="">Alle Kaffees</option>`;
+
+  coffees.forEach((coffee) => {
+    const dataOption = document.createElement("option");
+    dataOption.value = coffee;
+    el.coffeeSuggestions.appendChild(dataOption);
+
+    const filterOption = document.createElement("option");
+    filterOption.value = coffee;
+    filterOption.textContent = coffee;
+    el.filterCoffee.appendChild(filterOption);
+  });
+
+  el.filterCoffee.value = state.filters.coffee;
+}
+
+function renderQuickCoffeeButtons() {
+  el.quickCoffeeButtons.innerHTML = "";
+
+  const top = getTopCoffeeNames().slice(0, 6);
+
+  if (!top.length) {
+    el.quickCoffeeButtons.innerHTML = `
+      <div class="empty full">Noch keine Kaffees getrackt. Nach ein paar Shots erscheinen hier Schnellbuttons.</div>
+    `;
+    return;
+  }
+
+  top.forEach(({ name, count }) => {
+    const rec = findRecommendation(name, el.grinderSelect.value);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "quick-btn";
+    btn.innerHTML = `
+      <span>☕</span>
+      <strong>${escapeHTML(name)}</strong>
+      <small>${count} Shots${rec ? ` · MG ${formatNumber(rec.best_grind, 1)}` : ""}</small>
     `;
 
-    button.addEventListener("click", () => {
-      el.drinkSelect.value = drink.name;
-      fillFormFromDrink(drink);
+    btn.addEventListener("click", () => {
+      el.coffeeName.value = name;
+      updateCurrentRecommendation();
       openView("add");
     });
 
-    el.quickFavorites.appendChild(button);
+    el.quickCoffeeButtons.appendChild(btn);
   });
 }
 
-function getDrinkByName(name) {
-  return state.drinks.find((drink) => drink.name === name) || null;
-}
+function getTopCoffeeNames() {
+  const map = new Map();
 
-function fillFormFromDrink(drink) {
-  if (!drink) return;
+  state.entries.forEach((entry) => {
+    if (!entry.drink_name) return;
+    map.set(entry.drink_name, (map.get(entry.drink_name) || 0) + 1);
+  });
 
-  el.customDrinkName.value = "";
-  el.drinkEmoji.value = getMethodIcon(drink.drink_type || drink.name);
-  el.drinkType.value = drink.drink_type || "";
-  el.amountMl.value = drink.default_amount_ml ?? "";
-  el.caffeineMg.value = drink.default_caffeine_mg ?? "";
-}
-
-async function saveDrinkTemplate() {
-  const name = el.customDrinkName.value.trim();
-
-  if (!name) {
-    setFormMessage("Bitte zuerst einen Namen für dein eigenes Getränk eintragen.", "error");
-    return;
-  }
-
-  const payload = {
-    name,
-    drink_type: el.drinkType.value.trim() || null,
-    emoji: el.drinkEmoji.value.trim() || getMethodIcon(el.drinkType.value),
-    default_amount_ml: toNumber(el.amountMl.value) ?? 200,
-    default_caffeine_mg: toNumber(el.caffeineMg.value) ?? 80,
-  };
-
-  setButtonLoading(el.saveDrinkBtn, true, "Speichere ...", "Getränk als Vorlage speichern");
-
-  const { error } = await supabaseClient
-    .from(TABLE_DRINKS)
-    .upsert(payload, { onConflict: "name" });
-
-  setButtonLoading(el.saveDrinkBtn, false, "Speichere ...", "Getränk als Vorlage speichern");
-
-  if (error) {
-    console.error("Getränk konnte nicht gespeichert werden:", error);
-    setFormMessage(`Getränk konnte nicht gespeichert werden: ${error.message}`, "error");
-    return;
-  }
-
-  showToast("Getränkevorlage gespeichert ☕");
-  setFormMessage("Getränkevorlage gespeichert.");
-
-  await loadDrinks();
-  renderDrinkSelect();
-  renderQuickFavorites();
-  renderFilterDrinkSelect();
-
-  el.drinkSelect.value = name;
+  return Array.from(map.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
 }
 
 
 /* ============================================================
-   11. FORMULAR
+   Recommendations
    ============================================================ */
 
-function readEntryForm() {
-  const selectedDrink = getDrinkByName(el.drinkSelect.value);
-  const customName = el.customDrinkName.value.trim();
+function scoreShot(entry) {
+  const rating = Number(entry.rating);
+  const time = Number(entry.extraction_time_s);
+  const pressure = Number(entry.pressure_bar);
 
-  const drinkName = customName || selectedDrink?.name || el.drinkSelect.value || "";
+  const minTime = Number(state.settings.target_time_min_s);
+  const maxTime = Number(state.settings.target_time_max_s);
+  const targetTime = (minTime + maxTime) / 2;
+
+  const minPressure = Number(state.settings.target_pressure_min_bar);
+  const maxPressure = Number(state.settings.target_pressure_max_bar);
+  const targetPressure = (minPressure + maxPressure) / 2;
+
+  let score = 0;
+
+  if (Number.isFinite(rating)) {
+    score += (rating / 5) * 55;
+  } else {
+    score += 18;
+  }
+
+  if (Number.isFinite(time)) {
+    const distance = Math.abs(time - targetTime);
+    score += Math.max(0, 25 - distance * 3.2);
+  }
+
+  if (Number.isFinite(pressure)) {
+    const distance = Math.abs(pressure - targetPressure);
+    score += Math.max(0, 14 - distance * 4);
+  }
+
+  if (entry.entry_date) {
+    const ageDays = (Date.now() - new Date(`${entry.entry_date}T00:00:00`).getTime()) / 86400000;
+    score += Math.max(0, 6 - ageDays * 0.08);
+  }
+
+  return Math.round(score);
+}
+
+function isShotInTarget(entry) {
+  const time = Number(entry.extraction_time_s);
+  const pressure = Number(entry.pressure_bar);
+
+  const timeOk =
+    Number.isFinite(time) &&
+    time >= Number(state.settings.target_time_min_s) &&
+    time <= Number(state.settings.target_time_max_s);
+
+  const pressureOk =
+    !Number.isFinite(pressure) ||
+    (
+      pressure >= Number(state.settings.target_pressure_min_bar) &&
+      pressure <= Number(state.settings.target_pressure_max_bar)
+    );
+
+  return timeOk && pressureOk;
+}
+
+function recommendationKey(entry) {
+  return `${normalize(entry.drink_name)}__${entry.grinder_id || "no-grinder"}`;
+}
+
+function buildRecommendations(entries) {
+  const groups = new Map();
+
+  entries
+    .filter((entry) => entry.drink_name && entry.mahlgrad !== null && entry.mahlgrad !== undefined)
+    .forEach((entry) => {
+      const key = recommendationKey(entry);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(entry);
+    });
+
+  return Array.from(groups.values())
+    .map(buildRecommendationFromGroup)
+    .sort((a, b) => b.score - a.score);
+}
+
+function buildRecommendationFromGroup(group) {
+  const sorted = [...group].sort((a, b) => scoreShot(b) - scoreShot(a));
+  const best = sorted[0];
+
+  const goodShots = group.filter((entry) => scoreShot(entry) >= 75 || isShotInTarget(entry));
+  const baseShots = goodShots.length ? goodShots : [best];
+
+  const grinds = baseShots
+    .map((entry) => Number(entry.mahlgrad))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  const times = group.map((entry) => Number(entry.extraction_time_s)).filter(Number.isFinite);
+  const pressures = group.map((entry) => Number(entry.pressure_bar)).filter(Number.isFinite);
+  const ratings = group.map((entry) => Number(entry.rating)).filter(Number.isFinite);
+
+  const avg = (arr) => {
+    if (!arr.length) return null;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  };
+
+  const confidence =
+    group.length >= 6 ? "stabil" :
+    group.length >= 3 ? "vorläufig" :
+    "erster Richtwert";
+
+  const hitCount = group.filter(isShotInTarget).length;
+
+  return {
+    coffee_name: best.drink_name,
+    grinder_id: best.grinder_id || null,
+    grinder_name: equipmentName(best.grinder_id),
+    best_grind: Number(best.mahlgrad),
+    grind_min: grinds[0],
+    grind_max: grinds[grinds.length - 1],
+    best_entry: best,
+    shots_count: group.length,
+    good_count: goodShots.length,
+    hit_count: hitCount,
+    avg_time: avg(times),
+    avg_pressure: avg(pressures),
+    avg_rating: avg(ratings),
+    score: scoreShot(best),
+    confidence,
+    hint: buildGrindHint(best),
+  };
+}
+
+function buildGrindHint(entry) {
+  const time = Number(entry.extraction_time_s);
+  const pressure = Number(entry.pressure_bar);
+
+  if (!Number.isFinite(time)) {
+    return "Noch keine Zeitbewertung möglich. Beim nächsten Shot Extraktionszeit eintragen.";
+  }
+
+  if (time < Number(state.settings.target_time_min_s)) {
+    return "Der beste bekannte Shot lief eher zu schnell. Beim nächsten Versuch tendenziell etwas feiner mahlen.";
+  }
+
+  if (time > Number(state.settings.target_time_max_s)) {
+    return "Der beste bekannte Shot lief eher zu langsam. Beim nächsten Versuch tendenziell etwas gröber mahlen.";
+  }
+
+  if (Number.isFinite(pressure) && pressure < Number(state.settings.target_pressure_min_bar)) {
+    return "Zeit passt, Druck eher niedrig. Puck Prep prüfen oder minimal feiner mahlen.";
+  }
+
+  if (Number.isFinite(pressure) && pressure > Number(state.settings.target_pressure_max_bar)) {
+    return "Zeit passt, Druck eher hoch. Puck Prep prüfen oder minimal gröber mahlen.";
+  }
+
+  return "Sehr guter Bereich. Mahlgrad erstmal beibehalten.";
+}
+
+function findRecommendation(coffeeName, grinderId) {
+  const normalizedCoffee = normalize(coffeeName);
+  const exact = state.recommendations.find((rec) =>
+    normalize(rec.coffee_name) === normalizedCoffee &&
+    String(rec.grinder_id || "") === String(grinderId || "")
+  );
+
+  if (exact) return exact;
+
+  return state.recommendations.find((rec) =>
+    normalize(rec.coffee_name) === normalizedCoffee
+  ) || null;
+}
+
+function updateCurrentRecommendation() {
+  const coffeeName = el.coffeeName.value.trim();
+  const grinderId = el.grinderSelect.value;
+
+  if (!coffeeName) {
+    el.recommendationBox.classList.add("hidden");
+    return;
+  }
+
+  const rec = findRecommendation(coffeeName, grinderId);
+
+  if (!rec) {
+    el.recommendationBox.classList.remove("hidden");
+    el.recommendationTitle.textContent = "Noch keine Empfehlung";
+    el.recommendationText.textContent = "Für diesen Kaffee gibt es noch keinen gespeicherten Shot mit Mahlgrad.";
+    el.applyRecommendationBtn.classList.add("hidden");
+    return;
+  }
+
+  el.recommendationBox.classList.remove("hidden");
+  el.applyRecommendationBtn.classList.remove("hidden");
+
+  const range =
+    rec.grind_min !== rec.grind_max
+      ? `Bereich ${formatNumber(rec.grind_min, 1)}–${formatNumber(rec.grind_max, 1)}`
+      : `Mahlgrad ${formatNumber(rec.best_grind, 1)}`;
+
+  el.recommendationTitle.textContent = `Empfehlung: ${range}`;
+
+  el.recommendationText.textContent =
+    `${rec.coffee_name} · ${rec.grinder_name} · ${rec.shots_count} Shots · ` +
+    `${rec.confidence} · Ø ${formatNumber(rec.avg_time, 1)}s · Score ${rec.score}. ${rec.hint}`;
+}
+
+function applyCurrentRecommendation() {
+  const rec = findRecommendation(el.coffeeName.value.trim(), el.grinderSelect.value);
+
+  if (!rec) return;
+
+  el.mahlgrad.value = rec.best_grind ?? "";
+  el.doseG.value = rec.best_entry.dose_g ?? "18";
+  el.yieldG.value = rec.best_entry.yield_g ?? "36";
+  el.pressureBar.value = rec.best_entry.pressure_bar ?? "";
+  el.temperatureC.value = rec.best_entry.temperature_c ?? "";
+
+  setFormMessage("Empfehlung übernommen.");
+}
+
+function renderRecommendations() {
+  el.recommendationsCount.textContent = `${state.recommendations.length} Empfehlungen`;
+  el.recommendationsList.innerHTML = "";
+
+  if (!state.recommendations.length) {
+    el.recommendationsList.innerHTML = `
+      <div class="empty">
+        Noch keine Empfehlungen vorhanden. Speichere ein paar Shots mit Kaffee, Mühle, Mahlgrad und Bewertung.
+      </div>
+    `;
+    return;
+  }
+
+  state.recommendations.forEach((rec) => {
+    const card = document.createElement("article");
+    card.className = `recommendation-card ${confidenceClass(rec.confidence)}`;
+
+    const range =
+      rec.grind_min !== rec.grind_max
+        ? `${formatNumber(rec.grind_min, 1)}–${formatNumber(rec.grind_max, 1)}`
+        : `${formatNumber(rec.best_grind, 1)}`;
+
+    card.innerHTML = `
+      <div class="recommendation-top">
+        <div>
+          <h3>${escapeHTML(rec.coffee_name)}</h3>
+          <p>${escapeHTML(rec.grinder_name)} · ${rec.shots_count} Shots · ${rec.confidence}</p>
+        </div>
+        <div class="grind-badge">
+          <span>MG</span>
+          <strong>${range}</strong>
+        </div>
+      </div>
+
+      <div class="entry-meta recommendation-meta">
+        <span>⭐ Ø ${formatNumber(rec.avg_rating, 1)}/5</span>
+        <span>⏱️ Ø ${formatNumber(rec.avg_time, 1)}s</span>
+        <span>🧭 Ø ${formatNumber(rec.avg_pressure, 1)} Bar</span>
+        <span>🎯 ${rec.hit_count}/${rec.shots_count} Treffer</span>
+        <span>Score ${rec.score}</span>
+      </div>
+
+      <p>${escapeHTML(rec.hint)}</p>
+
+      <div class="actions compact-actions">
+        <button class="primary use-rec-btn" type="button">Für neuen Shot nutzen</button>
+      </div>
+    `;
+
+    card.querySelector(".use-rec-btn").addEventListener("click", () => {
+      resetForm();
+      el.coffeeName.value = rec.coffee_name;
+      el.grinderSelect.value = rec.grinder_id || "";
+      applyRecommendationFromObject(rec);
+      openView("add");
+    });
+
+    el.recommendationsList.appendChild(card);
+  });
+}
+
+function applyRecommendationFromObject(rec) {
+  el.mahlgrad.value = rec.best_grind ?? "";
+  el.doseG.value = rec.best_entry.dose_g ?? "18";
+  el.yieldG.value = rec.best_entry.yield_g ?? "36";
+  el.pressureBar.value = rec.best_entry.pressure_bar ?? "";
+  el.temperatureC.value = rec.best_entry.temperature_c ?? "";
+  updateCurrentRecommendation();
+}
+
+function confidenceClass(confidence) {
+  if (confidence === "stabil") return "confidence-high";
+  if (confidence === "vorläufig") return "confidence-mid";
+  return "confidence-low";
+}
+
+
+/* ============================================================
+   Shot Form
+   ============================================================ */
+
+function methodDefaultCaffeine(method) {
+  const text = normalize(method);
+
+  if (text.includes("doppel")) return 120;
+  if (text.includes("espresso")) return 80;
+  if (text.includes("v60")) return 120;
+  if (text.includes("french")) return 110;
+  if (text.includes("cold")) return 150;
+  return 95;
+}
+
+function readEntryForm() {
   const rawTime = el.entryTime.value || nowTime();
 
   return {
     entry_date: el.entryDate.value || todayISO(),
     entry_time: rawTime.length === 5 ? `${rawTime}:00` : rawTime,
 
-    drink_name: drinkName,
-    drink_type: el.drinkType.value.trim() || selectedDrink?.drink_type || null,
-    emoji: el.drinkEmoji.value.trim() || getMethodIcon(el.drinkType.value || drinkName),
+    drink_name: el.coffeeName.value.trim(),
+    drink_type: el.brewMethod.value,
+    emoji: getMethodIcon(el.brewMethod.value),
 
-    amount_ml: toNumber(el.amountMl.value),
+    amount_ml: toNumber(el.yieldG.value),
     caffeine_mg: toNumber(el.caffeineMg.value),
 
-    note: el.note.value.trim() || null,
+    dose_g: toNumber(el.doseG.value),
+    yield_g: toNumber(el.yieldG.value),
 
     mahlgrad: toNumber(el.mahlgrad.value),
     extraction_time_s: toNumber(el.extractionTime.value),
     pressure_bar: toNumber(el.pressureBar.value),
+    temperature_c: toNumber(el.temperatureC.value),
+
     rating: toNumber(el.rating.value),
+    note: el.note.value.trim() || null,
+
+    machine_id: el.machineSelect.value ? Number(el.machineSelect.value) : null,
+    grinder_id: el.grinderSelect.value ? Number(el.grinderSelect.value) : null,
   };
 }
 
-function validateEntryForm(showErrors = true) {
+function validateEntryForm() {
   const entry = readEntryForm();
-  const errors = {
-    drink: "",
-    amount: "",
-    caffeine: "",
-    form: "",
-  };
+
+  el.coffeeError.textContent = "";
+  el.mahlgradError.textContent = "";
+  el.formError.textContent = "";
+
+  let valid = true;
 
   if (!entry.drink_name) {
-    errors.drink = "Bitte Getränk auswählen oder Namen eintragen.";
+    el.coffeeError.textContent = "Bitte Kaffee oder Bohne eintragen.";
+    valid = false;
   }
 
-  if (entry.amount_ml === null || entry.amount_ml < 0) {
-    errors.amount = "Bitte eine gültige Menge eintragen.";
+  if (entry.mahlgrad === null) {
+    el.mahlgradError.textContent = "Bitte Mahlgrad eintragen.";
+    valid = false;
   }
 
-  if (entry.caffeine_mg === null || entry.caffeine_mg < 0) {
-    errors.caffeine = "Bitte gültigen Koffeinwert eintragen.";
-  }
-
-  const hasErrors = Boolean(errors.drink || errors.amount || errors.caffeine);
-
-  if (showErrors || hasErrors) {
-    el.drinkError.textContent = errors.drink;
-    el.amountError.textContent = errors.amount;
-    el.caffeineError.textContent = errors.caffeine;
-    el.formError.textContent = errors.form;
-  }
-
-  return !hasErrors;
+  return valid;
 }
 
-async function saveEntry() {
-  if (!validateEntryForm(true)) return;
+async function saveEntry(event) {
+  event.preventDefault();
+
+  if (!validateEntryForm()) return;
 
   const payload = readEntryForm();
-
   const isEditing = Boolean(state.editingId);
-  const defaultText = isEditing ? "Änderung speichern" : "Kaffee hinzufügen ☕";
+  const defaultText = isEditing ? "Änderung speichern" : "Shot speichern ☕";
 
   setButtonLoading(el.saveEntryBtn, true, "Speichere ...", defaultText);
 
@@ -874,18 +1054,26 @@ async function saveEntry() {
   setButtonLoading(el.saveEntryBtn, false, "Speichere ...", defaultText);
 
   if (response.error) {
-    console.error("Eintrag konnte nicht gespeichert werden:", response.error);
+    console.error("Shot konnte nicht gespeichert werden:", response.error);
     setFormMessage(`Speichern fehlgeschlagen: ${response.error.message}`, "error");
     return;
   }
 
-  showToast(isEditing ? "Eintrag aktualisiert ☕" : "Kaffee hinzugefügt ☕");
+  await loadEntries();
+  state.recommendations = buildRecommendations(state.entries);
+
+  const rec = findRecommendation(payload.drink_name, payload.grinder_id);
 
   resetForm();
-
-  await loadEntries();
   renderAll();
-  openView("history");
+
+  showToast(isEditing ? "Shot aktualisiert ☕" : "Shot gespeichert ☕");
+
+  if (rec) {
+    setFormMessage(`Aktuelle Empfehlung für ${payload.drink_name}: Mahlgrad ${formatNumber(rec.best_grind, 1)}.`);
+  }
+
+  openView("recommendations");
 }
 
 function resetForm() {
@@ -893,28 +1081,33 @@ function resetForm() {
 
   el.entryDate.value = todayISO();
   el.entryTime.value = nowTime();
-
-  el.customDrinkName.value = "";
-  el.note.value = "";
+  el.coffeeName.value = "";
+  el.brewMethod.value = "Espresso";
+  el.doseG.value = "18";
+  el.yieldG.value = "36";
   el.mahlgrad.value = "";
   el.extractionTime.value = "";
   el.pressureBar.value = "";
+  el.temperatureC.value = "";
+  el.caffeineMg.value = "80";
   el.rating.value = "";
+  el.note.value = "";
 
-  if (state.drinks.length) {
-    el.drinkSelect.value = state.drinks[0].name;
-    fillFormFromDrink(state.drinks[0]);
-  }
-
+  el.coffeeError.textContent = "";
+  el.mahlgradError.textContent = "";
   el.formError.textContent = "";
-  el.drinkError.textContent = "";
-  el.amountError.textContent = "";
-  el.caffeineError.textContent = "";
   setFormMessage("");
 
-  el.saveEntryBtn.textContent = "Kaffee hinzufügen ☕";
+  el.saveEntryBtn.textContent = "Shot speichern ☕";
   el.cancelEditBtn.classList.add("hidden");
   el.editBadge.classList.add("hidden");
+
+  renderEquipmentSelects();
+  updateCurrentRecommendation();
+}
+
+function cancelEdit() {
+  resetForm();
 }
 
 function startEdit(entry) {
@@ -922,82 +1115,80 @@ function startEdit(entry) {
 
   el.entryDate.value = entry.entry_date || todayISO();
   el.entryTime.value = formatEntryTime(entry.entry_time);
-
-  const knownDrink = getDrinkByName(entry.drink_name);
-
-  if (knownDrink) {
-    el.drinkSelect.value = knownDrink.name;
-    el.customDrinkName.value = "";
-  } else {
-    el.customDrinkName.value = entry.drink_name || "";
-  }
-
-  el.drinkEmoji.value = entry.emoji || getMethodIcon(entry);
-  el.drinkType.value = entry.drink_type || "";
-  el.amountMl.value = entry.amount_ml ?? "";
-  el.caffeineMg.value = entry.caffeine_mg ?? "";
-  el.note.value = entry.note || "";
-
+  el.coffeeName.value = entry.drink_name || "";
+  el.brewMethod.value = entry.drink_type || "Espresso";
+  el.machineSelect.value = entry.machine_id || "";
+  el.grinderSelect.value = entry.grinder_id || "";
+  el.doseG.value = entry.dose_g ?? "18";
+  el.yieldG.value = entry.yield_g ?? "36";
   el.mahlgrad.value = entry.mahlgrad ?? "";
   el.extractionTime.value = entry.extraction_time_s ?? "";
   el.pressureBar.value = entry.pressure_bar ?? "";
+  el.temperatureC.value = entry.temperature_c ?? "";
+  el.caffeineMg.value = entry.caffeine_mg ?? "80";
   el.rating.value = entry.rating ?? "";
+  el.note.value = entry.note || "";
 
   el.saveEntryBtn.textContent = "Änderung speichern";
   el.cancelEditBtn.classList.remove("hidden");
   el.editBadge.classList.remove("hidden");
 
-  setFormMessage("Du bearbeitest gerade einen bestehenden Eintrag.");
+  setFormMessage("Du bearbeitest gerade einen bestehenden Shot.");
+  updateCurrentRecommendation();
   openView("add");
 }
 
-function cancelEdit() {
-  resetForm();
+function duplicateLastShot() {
+  const last = state.entries[0];
+
+  if (!last) {
+    showToast("Noch kein Shot zum Duplizieren vorhanden.");
+    return;
+  }
+
+  state.editingId = null;
+
+  el.entryDate.value = todayISO();
+  el.entryTime.value = nowTime();
+  el.coffeeName.value = last.drink_name || "";
+  el.brewMethod.value = last.drink_type || "Espresso";
+  el.machineSelect.value = last.machine_id || "";
+  el.grinderSelect.value = last.grinder_id || "";
+  el.doseG.value = last.dose_g ?? "18";
+  el.yieldG.value = last.yield_g ?? "36";
+  el.mahlgrad.value = last.mahlgrad ?? "";
+  el.extractionTime.value = "";
+  el.pressureBar.value = last.pressure_bar ?? "";
+  el.temperatureC.value = last.temperature_c ?? "";
+  el.caffeineMg.value = last.caffeine_mg ?? "80";
+  el.rating.value = "";
+  el.note.value = "";
+
+  setFormMessage("Letzter Shot wurde als Vorlage übernommen.");
+  updateCurrentRecommendation();
 }
 
 
 /* ============================================================
-   12. EINTRÄGE / VERLAUF
+   History
    ============================================================ */
 
 function getFilteredEntries() {
   return state.entries.filter((entry) => {
     const dateMatches = !state.filters.date || entry.entry_date === state.filters.date;
-    const drinkMatches = !state.filters.drink || entry.drink_name === state.filters.drink;
-    return dateMatches && drinkMatches;
+    const coffeeMatches = !state.filters.coffee || entry.drink_name === state.filters.coffee;
+    return dateMatches && coffeeMatches;
   });
-}
-
-function renderFilterDrinkSelect() {
-  const currentValue = el.filterDrink.value;
-
-  const drinkNames = Array.from(
-    new Set([
-      ...state.drinks.map((drink) => drink.name),
-      ...state.entries.map((entry) => entry.drink_name),
-    ].filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b, "de"));
-
-  el.filterDrink.innerHTML = `<option value="">Alle Getränke</option>`;
-
-  drinkNames.forEach((name) => {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    el.filterDrink.appendChild(option);
-  });
-
-  el.filterDrink.value = currentValue;
 }
 
 function renderEntries() {
   const entries = getFilteredEntries();
 
-  el.entriesCount.textContent = `${entries.length} Einträge`;
+  el.entriesCount.textContent = `${entries.length} Shots`;
   el.entriesList.innerHTML = "";
 
   if (!entries.length) {
-    el.entriesList.innerHTML = `<div class="empty">Noch keine passenden Einträge vorhanden.</div>`;
+    el.entriesList.innerHTML = `<div class="empty">Noch keine passenden Shots vorhanden.</div>`;
     return;
   }
 
@@ -1010,33 +1201,28 @@ function renderEntries() {
   });
 
   groups.forEach((dayEntries, day) => {
-    const dayTotal = dayEntries.reduce((sum, entry) => sum + (Number(entry.caffeine_mg) || 0), 0);
-
     const group = document.createElement("section");
     group.className = "day-group";
 
     group.innerHTML = `
       <div class="day-head">
         <h3>${escapeHTML(formatDateHeader(day))}</h3>
-        <span>${formatNumber(dayTotal)} mg</span>
+        <span>${dayEntries.length} Shots</span>
       </div>
     `;
 
     dayEntries.forEach((entry) => {
+      const score = scoreShot(entry);
       const card = document.createElement("article");
-      card.className = `entry-card compact ${getRatingClass(entry.rating)}`;
+      card.className = `entry-card compact ${scoreClass(score)}`;
       card.tabIndex = 0;
-
-      const methodIcon = entry.emoji || getMethodIcon(entry);
-      const ratingText = entry.rating ? `${entry.rating}/5` : "–";
-      const methodName = getMethodName(entry);
 
       card.innerHTML = `
         <div class="swipe-hint left">Bearbeiten</div>
         <div class="swipe-hint right">Löschen</div>
 
         <div class="entry-main">
-          <div class="entry-icon">${escapeHTML(methodIcon)}</div>
+          <div class="entry-icon">${escapeHTML(getMethodIcon(entry.drink_type))}</div>
 
           <div class="entry-content">
             <div class="entry-title-row">
@@ -1045,29 +1231,24 @@ function renderEntries() {
             </div>
 
             <div class="entry-meta compact-meta">
-              <span class="method-chip">${escapeHTML(methodIcon)} ${escapeHTML(methodName)}</span>
-              <span>${formatNumber(entry.caffeine_mg)} mg</span>
-              <span>${formatNumber(entry.amount_ml)} ml</span>
-              <span class="rating-chip ${getRatingClass(entry.rating)}">★ ${ratingText}</span>
+              <span>⚙️ MG ${formatNumber(entry.mahlgrad, 1)}</span>
+              <span>⏱️ ${formatNumber(entry.extraction_time_s, 1)}s</span>
+              <span>🧭 ${formatNumber(entry.pressure_bar, 1)} Bar</span>
+              <span>⚖️ ${formatNumber(entry.dose_g, 1)}g → ${formatNumber(entry.yield_g, 1)}g</span>
+              <span>⭐ ${entry.rating || "–"}/5</span>
+              <span>Score ${score}</span>
             </div>
 
-            ${
-              entry.mahlgrad || entry.extraction_time_s || entry.pressure_bar
-                ? `
-                  <div class="entry-meta secondary-meta">
-                    <span>MG ${formatNumber(entry.mahlgrad, 1)}</span>
-                    <span>${formatNumber(entry.extraction_time_s, 1)} s</span>
-                    <span>${formatNumber(entry.pressure_bar, 1)} Bar</span>
-                  </div>
-                `
-                : ""
-            }
+            <div class="entry-meta secondary-meta">
+              <span>${escapeHTML(equipmentName(entry.grinder_id))}</span>
+              <span>${escapeHTML(entry.drink_type || "Espresso")}</span>
+            </div>
 
             ${entry.note ? `<p>${escapeHTML(entry.note)}</p>` : ""}
           </div>
         </div>
 
-        <button class="delete-entry" type="button" aria-label="Eintrag löschen">×</button>
+        <button class="delete-entry" type="button" aria-label="Shot löschen">×</button>
       `;
 
       card.addEventListener("click", () => {
@@ -1091,6 +1272,12 @@ function renderEntries() {
 
     el.entriesList.appendChild(group);
   });
+}
+
+function scoreClass(score) {
+  if (score >= 80) return "rating-good";
+  if (score >= 60) return "rating-mid";
+  return "rating-bad";
 }
 
 function enableSwipeActions(card, entry) {
@@ -1149,7 +1336,7 @@ function enableSwipeActions(card, entry) {
 }
 
 async function deleteEntry(id) {
-  const confirmed = window.confirm("Diesen Eintrag wirklich löschen?");
+  const confirmed = window.confirm("Diesen Shot wirklich löschen?");
   if (!confirmed) return;
 
   const { error } = await supabaseClient
@@ -1158,18 +1345,18 @@ async function deleteEntry(id) {
     .eq("id", id);
 
   if (error) {
-    console.error("Eintrag konnte nicht gelöscht werden:", error);
+    console.error("Shot konnte nicht gelöscht werden:", error);
     showToast("Löschen fehlgeschlagen.");
     return;
   }
 
-  showToast("Eintrag gelöscht.");
+  showToast("Shot gelöscht.");
   await loadEntries();
   renderAll();
 }
 
 async function deleteAllEntries() {
-  const firstConfirm = window.confirm("Wirklich ALLE Kaffee-Einträge löschen?");
+  const firstConfirm = window.confirm("Wirklich ALLE Shots löschen?");
   if (!firstConfirm) return;
 
   const secondConfirm = window.prompt('Zur Sicherheit bitte "ALLE LÖSCHEN" eingeben:');
@@ -1185,19 +1372,19 @@ async function deleteAllEntries() {
     .neq("id", 0);
 
   if (error) {
-    console.error("Alle Einträge konnten nicht gelöscht werden:", error);
+    console.error("Alle Shots konnten nicht gelöscht werden:", error);
     showToast("Löschen fehlgeschlagen.");
     return;
   }
 
-  showToast("Alle Einträge gelöscht.");
+  showToast("Alle Shots gelöscht.");
   await loadEntries();
   renderAll();
 }
 
 
 /* ============================================================
-   13. DASHBOARD / STATS
+   Dashboard
    ============================================================ */
 
 function renderDashboard() {
@@ -1210,12 +1397,13 @@ function renderDashboard() {
   el.todayCaffeine.textContent = `${formatNumber(todayCaffeine)} mg`;
   el.limitText.textContent = `Limit: ${formatNumber(limit)} mg`;
 
-  const remaining = estimateRemainingCaffeine();
-  el.caffeineRemaining.textContent = `${formatNumber(remaining)} mg`;
+  const times = state.entries.map((entry) => Number(entry.extraction_time_s)).filter(Number.isFinite);
+  const avgTime = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
+  el.avgTime.textContent = avgTime === null ? "–" : `${formatNumber(avgTime, 1)}s`;
 
-  const last7Days = getLastNDays(7);
-  const last7Total = sumCaffeineForDays(last7Days);
-  el.avgDaily.textContent = `${formatNumber(last7Total / 7)} mg`;
+  const targetShots = state.entries.filter((entry) => Number.isFinite(Number(entry.extraction_time_s)));
+  const hits = targetShots.filter(isShotInTarget).length;
+  el.hitRate.textContent = targetShots.length ? `${formatNumber((hits / targetShots.length) * 100)}%` : "–";
 
   if (todayCaffeine > limit) {
     el.overLimitHint.textContent = `Tageslimit überschritten: ${formatNumber(todayCaffeine)} mg von ${formatNumber(limit)} mg.`;
@@ -1226,25 +1414,29 @@ function renderDashboard() {
 
   renderWeekCanvas();
   renderTrendCanvas();
-  renderBeanRanking();
-  renderTopRatings();
+  renderCoffeeRanking();
+  renderTopShots();
   renderMethodDistribution();
   renderHeatmap();
 }
 
 function renderWeekCanvas() {
   const days = getLastNDays(7);
-  const values = days.map((day) => sumCaffeine(state.entries.filter((entry) => entry.entry_date === day)));
-  const average = values.reduce((a, b) => a + b, 0) / 7;
+  const values = days.map((day) =>
+    sumCaffeine(state.entries.filter((entry) => entry.entry_date === day))
+  );
 
+  const average = values.reduce((a, b) => a + b, 0) / 7;
   const previousDays = getPreviousNDays(7, 7);
+  const previousTotal = previousDays.reduce((sum, day) => {
+    return sum + sumCaffeine(state.entries.filter((entry) => entry.entry_date === day));
+  }, 0);
+
   const currentTotal = values.reduce((a, b) => a + b, 0);
-  const previousTotal = sumCaffeineForDays(previousDays);
 
   if (previousTotal > 0) {
     const diff = ((currentTotal - previousTotal) / previousTotal) * 100;
-    const prefix = diff >= 0 ? "+" : "";
-    el.weekCompare.textContent = `${prefix}${formatNumber(diff)}% zur Vorwoche`;
+    el.weekCompare.textContent = `${diff >= 0 ? "+" : ""}${formatNumber(diff)}% zur Vorwoche`;
   } else {
     el.weekCompare.textContent = "Keine Vorwoche";
   }
@@ -1257,91 +1449,89 @@ function renderWeekCanvas() {
 }
 
 function renderTrendCanvas() {
-  const days = getLastNDays(30);
-  const values = days.map((day) => sumCaffeine(state.entries.filter((entry) => entry.entry_date === day)));
+  const shots = [...state.entries]
+    .filter((entry) => Number.isFinite(Number(entry.extraction_time_s)))
+    .sort((a, b) => {
+      const aa = `${a.entry_date || ""} ${a.entry_time || ""}`;
+      const bb = `${b.entry_date || ""} ${b.entry_time || ""}`;
+      return aa.localeCompare(bb);
+    })
+    .slice(-30);
 
-  const firstHalf = values.slice(0, 15).reduce((a, b) => a + b, 0) / 15;
-  const secondHalf = values.slice(15).reduce((a, b) => a + b, 0) / 15;
+  const values = shots.map((entry) => Number(entry.extraction_time_s));
+  const labels = shots.map((_, index) => String(index + 1));
 
-  let trend = "stabil";
-  if (secondHalf > firstHalf * 1.12) trend = "steigend";
-  if (secondHalf < firstHalf * 0.88) trend = "fallend";
+  if (values.length >= 4) {
+    const first = values.slice(0, Math.floor(values.length / 2)).reduce((a, b) => a + b, 0) / Math.floor(values.length / 2);
+    const second = values.slice(Math.floor(values.length / 2)).reduce((a, b) => a + b, 0) / (values.length - Math.floor(values.length / 2));
 
-  el.trendBadge.textContent = trend;
+    let trend = "stabil";
+    if (second > first + 2) trend = "langsamer";
+    if (second < first - 2) trend = "schneller";
+    el.trendBadge.textContent = trend;
+  } else {
+    el.trendBadge.textContent = "zu wenig Daten";
+  }
 
-  const labels = days.map((day) => {
-    const d = new Date(`${day}T00:00:00`);
-    return d.getDate().toString();
-  });
-
-  drawLineChart(el.trendCanvas, labels, values, "mg");
+  drawLineChart(el.trendCanvas, labels, values, "s");
 }
 
-function renderBeanRanking() {
-  el.beanRanking.innerHTML = "";
+function renderCoffeeRanking() {
+  el.coffeeRanking.innerHTML = "";
 
-  if (!state.entries.length) {
-    el.beanRanking.innerHTML = `<div class="empty compact">Noch keine Daten.</div>`;
+  const top = getTopCoffeeNames().slice(0, 6);
+
+  if (!top.length) {
+    el.coffeeRanking.innerHTML = `<div class="empty compact">Noch keine Daten.</div>`;
     return;
   }
 
-  const map = new Map();
+  const max = Math.max(...top.map((item) => item.count));
 
-  state.entries.forEach((entry) => {
-    const key = entry.drink_name || "Unbekannt";
-    map.set(key, (map.get(key) || 0) + 1);
-  });
-
-  const items = Array.from(map.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6);
-
-  const max = Math.max(...items.map((item) => item[1]));
-
-  items.forEach(([name, count], index) => {
+  top.forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "rank-row";
     row.innerHTML = `
       <span class="rank-number">${index + 1}</span>
       <div>
-        <strong>${escapeHTML(name)}</strong>
+        <strong>${escapeHTML(item.name)}</strong>
         <div class="mini-track">
-          <div class="mini-fill" style="width:${(count / max) * 100}%"></div>
+          <div class="mini-fill" style="width:${(item.count / max) * 100}%"></div>
         </div>
       </div>
-      <span>${count}x</span>
+      <span>${item.count}x</span>
     `;
 
-    el.beanRanking.appendChild(row);
+    el.coffeeRanking.appendChild(row);
   });
 }
 
-function renderTopRatings() {
-  el.topRatings.innerHTML = "";
+function renderTopShots() {
+  el.topShots.innerHTML = "";
 
-  const rated = state.entries
-    .filter((entry) => Number(entry.rating) > 0)
-    .sort((a, b) => Number(b.rating) - Number(a.rating))
+  const shots = [...state.entries]
+    .filter((entry) => entry.mahlgrad !== null && entry.mahlgrad !== undefined)
+    .sort((a, b) => scoreShot(b) - scoreShot(a))
     .slice(0, 5);
 
-  if (!rated.length) {
-    el.topRatings.innerHTML = `<div class="empty compact">Noch keine Bewertungen vorhanden.</div>`;
+  if (!shots.length) {
+    el.topShots.innerHTML = `<div class="empty compact">Noch keine Shots mit Score.</div>`;
     return;
   }
 
-  rated.forEach((entry, index) => {
+  shots.forEach((entry, index) => {
     const row = document.createElement("div");
     row.className = "rank-row";
     row.innerHTML = `
       <span class="rank-number">${index + 1}</span>
       <div>
         <strong>${escapeHTML(entry.drink_name)}</strong>
-        <small>${escapeHTML(formatDateHeader(entry.entry_date))} · ${escapeHTML(formatEntryTime(entry.entry_time))}</small>
+        <small>MG ${formatNumber(entry.mahlgrad, 1)} · ${formatNumber(entry.extraction_time_s, 1)}s · ${entry.rating || "–"}/5</small>
       </div>
-      <span class="rating-chip ${getRatingClass(entry.rating)}">★ ${entry.rating}/5</span>
+      <span>Score ${scoreShot(entry)}</span>
     `;
 
-    el.topRatings.appendChild(row);
+    el.topShots.appendChild(row);
   });
 }
 
@@ -1349,7 +1539,7 @@ function renderMethodDistribution() {
   const map = new Map();
 
   state.entries.forEach((entry) => {
-    const method = getMethodName(entry);
+    const method = entry.drink_type || "Espresso";
     map.set(method, (map.get(method) || 0) + 1);
   });
 
@@ -1403,7 +1593,6 @@ function renderHeatmap() {
   });
 
   const max = Math.max(1, ...matrix.values());
-
   const top = Array.from(matrix.entries()).sort((a, b) => b[1] - a[1])[0];
 
   if (top) {
@@ -1416,7 +1605,6 @@ function renderHeatmap() {
 
   const topLeft = document.createElement("div");
   topLeft.className = "heatmap-label";
-  topLeft.textContent = "";
   el.heatmap.appendChild(topLeft);
 
   hours.forEach((hour) => {
@@ -1438,37 +1626,264 @@ function renderHeatmap() {
 
       const cell = document.createElement("div");
       cell.className = "heatmap-cell";
-      cell.title = `${weekdayLabel} ${hour}:00 – ${count} Einträge`;
+      cell.title = `${weekdayLabel} ${hour}:00 – ${count} Shots`;
       cell.style.opacity = count ? String(0.22 + intensity * 0.78) : "0.12";
-      cell.dataset.count = count;
 
       el.heatmap.appendChild(cell);
     });
   });
 }
 
-function estimateRemainingCaffeine() {
-  const now = new Date();
-  const halfLifeHours = 5;
 
-  return state.entries.reduce((sum, entry) => {
-    if (!entry.entry_date || !entry.entry_time) return sum;
+/* ============================================================
+   Equipment
+   ============================================================ */
 
-    const entryDateTime = new Date(`${entry.entry_date}T${entry.entry_time}`);
-    const diffHours = (now - entryDateTime) / 1000 / 60 / 60;
+function readEquipmentForm() {
+  return {
+    category: el.equipmentCategory.value || "Sonstiges",
+    name: el.equipmentName.value.trim(),
+    brand: el.equipmentBrand.value.trim() || null,
+    model: el.equipmentModel.value.trim() || null,
+    purchase_date: el.equipmentPurchaseDate.value || null,
+    price_eur: toNumber(el.equipmentPrice.value),
+    facts: el.equipmentFacts.value.trim() || null,
+    notes: el.equipmentNotes.value.trim() || null,
+    is_active: Boolean(el.equipmentActive.checked),
+    updated_at: new Date().toISOString(),
+  };
+}
 
-    if (diffHours < 0) return sum;
+async function saveEquipment(event) {
+  event.preventDefault();
 
-    const caffeine = Number(entry.caffeine_mg) || 0;
-    const remaining = caffeine * Math.pow(0.5, diffHours / halfLifeHours);
+  const payload = readEquipmentForm();
 
-    return sum + remaining;
-  }, 0);
+  if (!payload.name) {
+    setEquipmentMessage("Bitte mindestens einen Namen eintragen.", "error");
+    return;
+  }
+
+  const isEditing = Boolean(state.editingEquipmentId);
+  const defaultText = isEditing ? "Änderung speichern" : "Equipment speichern";
+
+  setButtonLoading(el.saveEquipmentBtn, true, "Speichere ...", defaultText);
+
+  let response;
+
+  if (isEditing) {
+    response = await supabaseClient
+      .from(TABLE_EQUIPMENT)
+      .update(payload)
+      .eq("id", state.editingEquipmentId)
+      .select()
+      .single();
+  } else {
+    response = await supabaseClient
+      .from(TABLE_EQUIPMENT)
+      .insert(payload)
+      .select()
+      .single();
+  }
+
+  setButtonLoading(el.saveEquipmentBtn, false, "Speichere ...", defaultText);
+
+  if (response.error) {
+    console.error("Equipment konnte nicht gespeichert werden:", response.error);
+    setEquipmentMessage(`Speichern fehlgeschlagen: ${response.error.message}`, "error");
+    return;
+  }
+
+  showToast(isEditing ? "Equipment aktualisiert." : "Equipment gespeichert.");
+  resetEquipmentForm();
+
+  await loadEquipment();
+  renderAll();
+}
+
+function renderEquipment() {
+  el.equipmentCount.textContent = `${state.equipment.length} Geräte`;
+  el.equipmentList.innerHTML = "";
+
+  if (!state.equipment.length) {
+    el.equipmentList.innerHTML = `<div class="empty">Noch kein Equipment hinterlegt.</div>`;
+    return;
+  }
+
+  const grouped = new Map();
+
+  state.equipment.forEach((item) => {
+    const category = item.category || "Sonstiges";
+    if (!grouped.has(category)) grouped.set(category, []);
+    grouped.get(category).push(item);
+  });
+
+  grouped.forEach((items, category) => {
+    const group = document.createElement("section");
+    group.className = "equipment-group";
+
+    group.innerHTML = `
+      <div class="day-head">
+        <h3>${escapeHTML(getEquipmentIcon(category))} ${escapeHTML(category)}</h3>
+        <span>${items.length}</span>
+      </div>
+    `;
+
+    items.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = `equipment-card ${item.is_active ? "active-equipment" : "inactive-equipment"}`;
+
+      card.innerHTML = `
+        <div class="equipment-main">
+          <div class="equipment-icon">${escapeHTML(getEquipmentIcon(item.category))}</div>
+
+          <div class="equipment-content">
+            <div class="equipment-title-row">
+              <strong>${escapeHTML(item.name)}</strong>
+              <span>${item.is_active ? "Aktiv" : "Inaktiv"}</span>
+            </div>
+
+            <div class="entry-meta compact-meta">
+              ${item.brand ? `<span>${escapeHTML(item.brand)}</span>` : ""}
+              ${item.model ? `<span>${escapeHTML(item.model)}</span>` : ""}
+              ${item.purchase_date ? `<span>Gekauft: ${formatDateShort(item.purchase_date)}</span>` : ""}
+              ${item.price_eur !== null && item.price_eur !== undefined ? `<span>${formatNumber(item.price_eur, 2)} €</span>` : ""}
+            </div>
+
+            ${item.facts ? `<p><strong>Fakten:</strong> ${escapeHTML(item.facts)}</p>` : ""}
+            ${item.notes ? `<p><strong>Notiz:</strong> ${escapeHTML(item.notes)}</p>` : ""}
+          </div>
+        </div>
+
+        <button class="delete-equipment" type="button" aria-label="Equipment löschen">×</button>
+      `;
+
+      card.addEventListener("click", () => startEditEquipment(item));
+
+      card.querySelector(".delete-equipment").addEventListener("click", async (event) => {
+        event.stopPropagation();
+        await deleteEquipment(item.id);
+      });
+
+      group.appendChild(card);
+    });
+
+    el.equipmentList.appendChild(group);
+  });
+}
+
+function startEditEquipment(item) {
+  state.editingEquipmentId = item.id;
+
+  el.equipmentCategory.value = item.category || "Sonstiges";
+  el.equipmentName.value = item.name || "";
+  el.equipmentBrand.value = item.brand || "";
+  el.equipmentModel.value = item.model || "";
+  el.equipmentPurchaseDate.value = item.purchase_date || "";
+  el.equipmentPrice.value = item.price_eur ?? "";
+  el.equipmentFacts.value = item.facts || "";
+  el.equipmentNotes.value = item.notes || "";
+  el.equipmentActive.checked = Boolean(item.is_active);
+
+  el.saveEquipmentBtn.textContent = "Änderung speichern";
+  el.cancelEquipmentEditBtn.classList.remove("hidden");
+
+  setEquipmentMessage("Du bearbeitest gerade ein Equipment.");
+  openView("equipment");
+}
+
+function resetEquipmentForm() {
+  state.editingEquipmentId = null;
+
+  el.equipmentCategory.value = "Maschine";
+  el.equipmentName.value = "";
+  el.equipmentBrand.value = "";
+  el.equipmentModel.value = "";
+  el.equipmentPurchaseDate.value = "";
+  el.equipmentPrice.value = "";
+  el.equipmentFacts.value = "";
+  el.equipmentNotes.value = "";
+  el.equipmentActive.checked = true;
+
+  el.saveEquipmentBtn.textContent = "Equipment speichern";
+  el.cancelEquipmentEditBtn.classList.add("hidden");
+
+  setEquipmentMessage("");
+}
+
+async function deleteEquipment(id) {
+  const confirmed = window.confirm("Dieses Equipment wirklich löschen?");
+  if (!confirmed) return;
+
+  const { error } = await supabaseClient
+    .from(TABLE_EQUIPMENT)
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    console.error("Equipment konnte nicht gelöscht werden:", error);
+    showToast("Löschen fehlgeschlagen.");
+    return;
+  }
+
+  showToast("Equipment gelöscht.");
+  await loadEquipment();
+  renderAll();
 }
 
 
 /* ============================================================
-   14. CHARTS
+   Settings
+   ============================================================ */
+
+async function saveSettings() {
+  const payload = {
+    id: 1,
+    caffeine_limit_mg: toNumber(el.limitInput.value) ?? 400,
+    target_time_min_s: toNumber(el.targetTimeMin.value) ?? 25,
+    target_time_max_s: toNumber(el.targetTimeMax.value) ?? 30,
+    target_pressure_min_bar: toNumber(el.targetPressureMin.value) ?? 8,
+    target_pressure_max_bar: toNumber(el.targetPressureMax.value) ?? 10,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (payload.target_time_min_s >= payload.target_time_max_s) {
+    setSettingsMessage("Die minimale Zielzeit muss kleiner als die maximale Zielzeit sein.", "error");
+    return;
+  }
+
+  setButtonLoading(el.saveSettingsBtn, true, "Speichere ...", "Einstellungen speichern");
+
+  const { error } = await supabaseClient
+    .from(TABLE_SETTINGS)
+    .upsert(payload, { onConflict: "id" });
+
+  setButtonLoading(el.saveSettingsBtn, false, "Speichere ...", "Einstellungen speichern");
+
+  if (error) {
+    console.error("Einstellungen konnten nicht gespeichert werden:", error);
+    setSettingsMessage(`Speichern fehlgeschlagen: ${error.message}`, "error");
+    return;
+  }
+
+  state.settings = {
+    caffeine_limit_mg: payload.caffeine_limit_mg,
+    target_time_min_s: payload.target_time_min_s,
+    target_time_max_s: payload.target_time_max_s,
+    target_pressure_min_bar: payload.target_pressure_min_bar,
+    target_pressure_max_bar: payload.target_pressure_max_bar,
+  };
+
+  state.recommendations = buildRecommendations(state.entries);
+
+  setSettingsMessage("Einstellungen gespeichert.");
+  showToast("Einstellungen gespeichert.");
+  renderAll();
+}
+
+
+/* ============================================================
+   Charts
    ============================================================ */
 
 function setupCanvas(canvas) {
@@ -1595,6 +2010,7 @@ function drawLineChart(canvas, labels, values, unit) {
   ctx.stroke();
 
   ctx.fillStyle = "#d4a574";
+
   values.forEach((value, index) => {
     if (value <= 0) return;
 
@@ -1654,7 +2070,7 @@ function drawDonut(canvas, items) {
 
   ctx.fillStyle = "rgba(245,245,245,0.72)";
   ctx.font = "12px system-ui";
-  ctx.fillText("Einträge", cx, cy + 22);
+  ctx.fillText("Shots", cx, cy + 22);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -1668,331 +2084,5 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, radius);
   ctx.closePath();
 }
-
-
-/* ============================================================
-   15. MAHLGRADE
-   ============================================================ */
-
-function grinderMatches(item) {
-  const q = normalize(state.grinderSearch);
-  if (!q) return true;
-
-  const haystack = normalize([
-    item.marke,
-    item.bohne,
-    item.roestgrad,
-    item.zusammensetzung,
-    item.mahlgrad,
-    item.extraktionszeit_36g_s,
-    item.druck_bar,
-    item.geschmack,
-  ].join(" "));
-
-  return q.split(/\s+/).every((term) => haystack.includes(term));
-}
-
-function renderGrinderSettings() {
-  const items = state.grinderSettings.filter(grinderMatches);
-
-  el.grinderCount.textContent = `${items.length} Einträge`;
-  el.grinderTable.innerHTML = "";
-
-  if (!items.length) {
-    el.grinderTable.innerHTML = `
-      <tr>
-        <td colspan="8">Keine Mahlgrad-Daten gefunden.</td>
-      </tr>
-    `;
-    return;
-  }
-
-  items.forEach((item) => {
-    const row = document.createElement("tr");
-    const roastClass = getRoastClass(item.roestgrad);
-
-    row.innerHTML = `
-      <td><strong>${escapeHTML(item.marke || "–")}</strong></td>
-      <td>${escapeHTML(item.bohne || "–")}</td>
-      <td><span class="roast-chip ${roastClass}">${escapeHTML(item.roestgrad || "–")}</span></td>
-      <td>${formatNumber(item.mahlgrad, 1)}</td>
-      <td>${formatNumber(item.extraktionszeit_36g_s, 1)} s</td>
-      <td>${formatNumber(item.druck_bar, 1)} Bar</td>
-      <td>${escapeHTML(item.geschmack || "–")}</td>
-      <td><button class="row-btn" type="button">Nutzen</button></td>
-    `;
-
-    row.querySelector(".row-btn").addEventListener("click", () => {
-      applyGrinderSetting(item);
-    });
-
-    el.grinderTable.appendChild(row);
-  });
-}
-
-function applyGrinderSetting(item) {
-  el.customDrinkName.value = item.bohne || "";
-  el.drinkType.value = item.roestgrad || "Espresso";
-  el.drinkEmoji.value = getMethodIcon("Espresso");
-  el.amountMl.value = 36;
-  el.caffeineMg.value = 80;
-  el.mahlgrad.value = item.mahlgrad ?? "";
-  el.extractionTime.value = item.extraktionszeit_36g_s ?? "";
-  el.pressureBar.value = item.druck_bar ?? "";
-  el.note.value = item.geschmack || "";
-
-  openView("add");
-  setFormMessage("Mahlgrad-Vorlage übernommen.");
-}
-
-
-/* ============================================================
-   16. EQUIPMENT
-   ============================================================ */
-
-function readEquipmentForm() {
-  return {
-    category: el.equipmentCategory.value || "Sonstiges",
-    name: el.equipmentName.value.trim(),
-    brand: el.equipmentBrand.value.trim() || null,
-    model: el.equipmentModel.value.trim() || null,
-    purchase_date: el.equipmentPurchaseDate.value || null,
-    price_eur: toNumber(el.equipmentPrice.value),
-    facts: el.equipmentFacts.value.trim() || null,
-    notes: el.equipmentNotes.value.trim() || null,
-    is_active: Boolean(el.equipmentActive.checked),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-async function saveEquipment(event) {
-  event.preventDefault();
-
-  const payload = readEquipmentForm();
-
-  if (!payload.name) {
-    setEquipmentMessage("Bitte mindestens einen Namen eintragen.", "error");
-    return;
-  }
-
-  const isEditing = Boolean(state.editingEquipmentId);
-  const defaultText = isEditing ? "Änderung speichern" : "Equipment speichern";
-
-  setButtonLoading(el.saveEquipmentBtn, true, "Speichere ...", defaultText);
-
-  let response;
-
-  if (isEditing) {
-    response = await supabaseClient
-      .from(TABLE_EQUIPMENT)
-      .update(payload)
-      .eq("id", state.editingEquipmentId)
-      .select()
-      .single();
-  } else {
-    response = await supabaseClient
-      .from(TABLE_EQUIPMENT)
-      .insert(payload)
-      .select()
-      .single();
-  }
-
-  setButtonLoading(el.saveEquipmentBtn, false, "Speichere ...", defaultText);
-
-  if (response.error) {
-    console.error("Equipment konnte nicht gespeichert werden:", response.error);
-    setEquipmentMessage(`Speichern fehlgeschlagen: ${response.error.message}`, "error");
-    return;
-  }
-
-  showToast(isEditing ? "Equipment aktualisiert." : "Equipment gespeichert.");
-  resetEquipmentForm();
-
-  await loadEquipment();
-  renderEquipment();
-}
-
-function renderEquipment() {
-  if (!el.equipmentList || !el.equipmentCount) return;
-
-  el.equipmentCount.textContent = `${state.equipment.length} Geräte`;
-  el.equipmentList.innerHTML = "";
-
-  if (!state.equipment.length) {
-    el.equipmentList.innerHTML = `<div class="empty">Noch kein Equipment hinterlegt.</div>`;
-    return;
-  }
-
-  const grouped = new Map();
-
-  state.equipment.forEach((item) => {
-    const category = item.category || "Sonstiges";
-
-    if (!grouped.has(category)) {
-      grouped.set(category, []);
-    }
-
-    grouped.get(category).push(item);
-  });
-
-  grouped.forEach((items, category) => {
-    const group = document.createElement("section");
-    group.className = "equipment-group";
-
-    group.innerHTML = `
-      <div class="day-head">
-        <h3>${escapeHTML(getEquipmentIcon(category))} ${escapeHTML(category)}</h3>
-        <span>${items.length}</span>
-      </div>
-    `;
-
-    items.forEach((item) => {
-      const card = document.createElement("article");
-      card.className = `equipment-card ${item.is_active ? "active-equipment" : "inactive-equipment"}`;
-
-      card.innerHTML = `
-        <div class="equipment-main">
-          <div class="equipment-icon">${escapeHTML(getEquipmentIcon(item.category))}</div>
-
-          <div class="equipment-content">
-            <div class="equipment-title-row">
-              <strong>${escapeHTML(item.name)}</strong>
-              <span>${item.is_active ? "Aktiv" : "Inaktiv"}</span>
-            </div>
-
-            <div class="entry-meta compact-meta">
-              ${item.brand ? `<span>${escapeHTML(item.brand)}</span>` : ""}
-              ${item.model ? `<span>${escapeHTML(item.model)}</span>` : ""}
-              ${item.purchase_date ? `<span>Gekauft: ${formatDateShort(item.purchase_date)}</span>` : ""}
-              ${item.price_eur !== null && item.price_eur !== undefined ? `<span>${formatNumber(item.price_eur, 2)} €</span>` : ""}
-            </div>
-
-            ${item.facts ? `<p><strong>Fakten:</strong> ${escapeHTML(item.facts)}</p>` : ""}
-            ${item.notes ? `<p><strong>Notiz:</strong> ${escapeHTML(item.notes)}</p>` : ""}
-          </div>
-        </div>
-
-        <button class="delete-equipment" type="button" aria-label="Equipment löschen">×</button>
-      `;
-
-      card.addEventListener("click", () => startEditEquipment(item));
-
-      card.querySelector(".delete-equipment").addEventListener("click", async (event) => {
-        event.stopPropagation();
-        await deleteEquipment(item.id);
-      });
-
-      group.appendChild(card);
-    });
-
-    el.equipmentList.appendChild(group);
-  });
-}
-
-function startEditEquipment(item) {
-  state.editingEquipmentId = item.id;
-
-  el.equipmentCategory.value = item.category || "Sonstiges";
-  el.equipmentName.value = item.name || "";
-  el.equipmentBrand.value = item.brand || "";
-  el.equipmentModel.value = item.model || "";
-  el.equipmentPurchaseDate.value = item.purchase_date || "";
-  el.equipmentPrice.value = item.price_eur ?? "";
-  el.equipmentFacts.value = item.facts || "";
-  el.equipmentNotes.value = item.notes || "";
-  el.equipmentActive.checked = Boolean(item.is_active);
-
-  el.saveEquipmentBtn.textContent = "Änderung speichern";
-  el.cancelEquipmentEditBtn.classList.remove("hidden");
-
-  setEquipmentMessage("Du bearbeitest gerade ein Equipment.");
-  openView("equipment");
-}
-
-function resetEquipmentForm() {
-  state.editingEquipmentId = null;
-
-  el.equipmentCategory.value = "Maschine";
-  el.equipmentName.value = "";
-  el.equipmentBrand.value = "";
-  el.equipmentModel.value = "";
-  el.equipmentPurchaseDate.value = "";
-  el.equipmentPrice.value = "";
-  el.equipmentFacts.value = "";
-  el.equipmentNotes.value = "";
-  el.equipmentActive.checked = true;
-
-  el.saveEquipmentBtn.textContent = "Equipment speichern";
-  el.cancelEquipmentEditBtn.classList.add("hidden");
-
-  setEquipmentMessage("");
-}
-
-async function deleteEquipment(id) {
-  const confirmed = window.confirm("Dieses Equipment wirklich löschen?");
-  if (!confirmed) return;
-
-  const { error } = await supabaseClient
-    .from(TABLE_EQUIPMENT)
-    .delete()
-    .eq("id", id);
-
-  if (error) {
-    console.error("Equipment konnte nicht gelöscht werden:", error);
-    showToast("Löschen fehlgeschlagen.");
-    return;
-  }
-
-  showToast("Equipment gelöscht.");
-
-  await loadEquipment();
-  renderEquipment();
-}
-
-
-/* ============================================================
-   17. SETTINGS
-   ============================================================ */
-
-async function saveSettings() {
-  const limit = toNumber(el.limitInput.value);
-  const unit = el.unitSelect.value || "ml";
-
-  if (limit === null || limit < 0) {
-    setSettingsMessage("Bitte ein gültiges Koffeinlimit eintragen.", "error");
-    return;
-  }
-
-  setButtonLoading(el.saveSettingsBtn, true, "Speichere ...", "Einstellungen speichern");
-
-  const { error } = await supabaseClient
-    .from(TABLE_SETTINGS)
-    .upsert({
-      id: 1,
-      caffeine_limit_mg: limit,
-      unit,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "id" });
-
-  setButtonLoading(el.saveSettingsBtn, false, "Speichere ...", "Einstellungen speichern");
-
-  if (error) {
-    console.error("Einstellungen konnten nicht gespeichert werden:", error);
-    setSettingsMessage(`Speichern fehlgeschlagen: ${error.message}`, "error");
-    return;
-  }
-
-  state.settings.caffeine_limit_mg = limit;
-  state.settings.unit = unit;
-
-  setSettingsMessage("Einstellungen gespeichert.");
-  showToast("Einstellungen gespeichert.");
-  renderDashboard();
-}
-
-
-/* ============================================================
-   START
-   ============================================================ */
 
 init();
