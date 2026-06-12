@@ -9,10 +9,6 @@
    ============================================================ */
 
 const SUPABASE_URL = "https://lrzgcqoqcwicpuuuhaoj.supabase.co";
-
-// WICHTIG:
-// Hier muss dein kompletter Publishable Key / anon public key rein.
-// Nicht nur "sb_publishable_..." eintragen.
 const SUPABASE_ANON_KEY = "sb_publishable_uunR3UQ9rttiK8dG85IedQ__Tn1duVK";
 
 
