@@ -4,209 +4,285 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Coffee Tracker</title>
-  
-<link rel="icon" type="image/svg+xml" href="icon.svg" />
-  
+
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="style.css" />
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
+
 <body>
-  <main class="app">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">Espresso • Mühle • Shot-Tracking</p>
-        <h1>Coffee Tracker</h1>
-        <p class="subline">Mahlgrad, Extraktionszeit, Druck und Geschmack sauber tracken.</p>
+  <main class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <img class="brand-logo" src="icon.svg" alt="" onerror="this.style.display='none'" />
+        <div>
+          <p class="eyebrow">Kaffee • Koffein • Mahlgrad</p>
+          <h1>Coffee Tracker</h1>
+          <p class="subline">Tracke Getränke, Koffein, Shots, Mahlgrad, Equipment und Geschmack.</p>
+        </div>
       </div>
-      <div class="hero-badge">
-        <span>☕</span>
-        <strong id="todayLabel">Heute</strong>
-      </div>
+
+      <button id="navToggle" class="nav-toggle" type="button" aria-label="Navigation öffnen">
+        ☰
+      </button>
     </header>
 
-    <nav class="tabs" aria-label="Navigation">
-      <button class="tab active" data-view="dashboard">Dashboard</button>
-      <button class="tab" data-view="shot">Shot eintragen</button>
-      <button class="tab" data-view="database">Mahlgrade</button>
-      <button class="tab" data-view="history">Verlauf</button>
+    <nav id="tabs" class="tabs" aria-label="Navigation">
+      <button class="tab active" data-view="add" type="button">Eintragen</button>
+      <button class="tab" data-view="dashboard" type="button">Übersicht</button>
+      <button class="tab" data-view="history" type="button">Verlauf</button>
+      <button class="tab" data-view="grinder" type="button">Mahlgrade</button>
+      <button class="tab" data-view="equipment" type="button">Equipment</button>
+      <button class="tab" data-view="settings" type="button">Einstellungen</button>
     </nav>
 
-    <section id="view-dashboard" class="view active">
+    <section id="view-add" class="view active">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Getränk hinzufügen</h2>
+            <p>Speichere Kaffee, Espresso oder eigene Getränke inklusive Koffein und Shot-Daten.</p>
+          </div>
+          <span id="editBadge" class="badge hidden">Bearbeiten</span>
+        </div>
+
+        <div id="quickFavorites" class="quick-grid"></div>
+
+        <form id="entryForm" novalidate>
+          <div class="form-grid">
+            <label>
+              Getränk
+              <select id="drinkSelect" autocomplete="off"></select>
+              <small id="drinkError" class="field-error"></small>
+            </label>
+
+            <label>
+              Getränketyp / Brühmethode
+              <input id="drinkType" type="text" placeholder="z. B. Espresso, V60, French Press" />
+            </label>
+
+            <label>
+              Eigenes Getränk / Bohne
+              <input id="customDrinkName" type="text" placeholder="z. B. Pano Sipeo Espresso" />
+            </label>
+
+            <label>
+              Icon / Emoji
+              <input id="drinkEmoji" type="text" maxlength="2" placeholder="☕" />
+            </label>
+
+            <label>
+              Datum
+              <input id="entryDate" type="date" />
+            </label>
+
+            <label>
+              Uhrzeit
+              <input id="entryTime" type="time" />
+            </label>
+
+            <label>
+              Menge in ml
+              <input id="amountMl" type="number" inputmode="decimal" step="1" min="0" placeholder="200" />
+              <small id="amountError" class="field-error"></small>
+            </label>
+
+            <label>
+              Koffein in mg
+              <input id="caffeineMg" type="number" inputmode="decimal" step="1" min="0" placeholder="80" />
+              <small id="caffeineError" class="field-error"></small>
+            </label>
+
+            <label>
+              Mahlgrad
+              <input id="mahlgrad" type="number" inputmode="decimal" step="0.1" placeholder="optional, z. B. 13.5" />
+            </label>
+
+            <label>
+              Extraktionszeit in s
+              <input id="extractionTime" type="number" inputmode="decimal" step="0.1" placeholder="optional, z. B. 25" />
+            </label>
+
+            <label>
+              Druck in Bar
+              <input id="pressureBar" type="number" inputmode="decimal" step="0.1" placeholder="optional, z. B. 9" />
+            </label>
+
+            <label>
+              Bewertung
+              <select id="rating">
+                <option value="">–</option>
+                <option value="1">1 – schlecht</option>
+                <option value="2">2 – geht so</option>
+                <option value="3">3 – okay</option>
+                <option value="4">4 – gut</option>
+                <option value="5">5 – sehr gut</option>
+              </select>
+            </label>
+
+            <label class="full">
+              Notiz / Geschmack
+              <textarea id="note" rows="4" placeholder="z. B. gute Crema, leicht bitter, sehr rund ..."></textarea>
+            </label>
+          </div>
+
+          <p id="formError" class="form-error"></p>
+          <p id="formMessage" class="message"></p>
+
+          <div class="actions">
+            <button id="saveEntryBtn" class="primary" type="submit">Kaffee hinzufügen ☕</button>
+            <button id="saveDrinkBtn" class="secondary" type="button">Getränk als Vorlage speichern</button>
+            <button id="cancelEditBtn" class="ghost hidden" type="button">Bearbeiten abbrechen</button>
+            <button id="resetFormBtn" class="ghost" type="button">Formular leeren</button>
+          </div>
+        </form>
+      </article>
+    </section>
+
+    <section id="view-dashboard" class="view">
       <div class="cards">
         <article class="card">
-          <span class="card-label">Beste Bewertung</span>
-          <strong id="bestRating">–</strong>
-          <small id="bestRatingSub">Noch keine Shots</small>
+          <span class="card-label">Heute</span>
+          <strong id="todayCount">0</strong>
+          <small>Getränke</small>
         </article>
 
         <article class="card">
-          <span class="card-label">Ø Extraktionszeit</span>
-          <strong id="avgTime">–</strong>
-          <small>über gespeicherte Shots</small>
+          <span class="card-label">Koffein heute</span>
+          <strong id="todayCaffeine">0 mg</strong>
+          <small id="limitText">Limit: 400 mg</small>
         </article>
 
         <article class="card">
-          <span class="card-label">Ø Druck</span>
-          <strong id="avgPressure">–</strong>
-          <small>über gespeicherte Shots</small>
+          <span class="card-label">Aktiv im Körper</span>
+          <strong id="caffeineRemaining">0 mg</strong>
+          <small>geschätzt, Halbwertszeit ca. 5h</small>
         </article>
 
         <article class="card">
-          <span class="card-label">Letzter Mahlgrad</span>
-          <strong id="lastGrind">–</strong>
-          <small id="lastShotSub">Noch kein Verlauf</small>
+          <span class="card-label">Ø pro Tag</span>
+          <strong id="avgDaily">0 mg</strong>
+          <small>letzte 7 Tage</small>
         </article>
       </div>
 
-      <div class="grid two">
+      <p id="overLimitHint" class="limit-warning hidden"></p>
+
+      <div class="stats-grid">
         <article class="panel">
           <div class="panel-head">
-            <h2>Extraktionszeit über Zeit</h2>
-            <span>Linienchart</span>
+            <div>
+              <h2>Koffein / Woche</h2>
+              <p>Tagessummen mit Wochendurchschnitt</p>
+            </div>
+            <span id="weekCompare" class="badge">–</span>
           </div>
-          <canvas id="timeChart" height="220"></canvas>
+          <canvas id="weekCanvas" class="chart-canvas" height="260"></canvas>
         </article>
 
         <article class="panel">
           <div class="panel-head">
-            <h2>Druck über Zeit</h2>
-            <span>Linienchart</span>
+            <div>
+              <h2>Konsum-Trend</h2>
+              <p>Entwicklung der letzten 30 Tage</p>
+            </div>
+            <span id="trendBadge" class="badge">–</span>
           </div>
-          <canvas id="pressureChart" height="220"></canvas>
+          <canvas id="trendCanvas" class="chart-canvas" height="260"></canvas>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Lieblingsbohnen</h2>
+              <p>Ranking nach Häufigkeit</p>
+            </div>
+            <span class="badge">Top</span>
+          </div>
+          <div id="beanRanking" class="ranking-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Beste Bewertungen</h2>
+              <p>Top 5 Einträge</p>
+            </div>
+            <span class="badge">Rating</span>
+          </div>
+          <div id="topRatings" class="ranking-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Brühmethoden</h2>
+              <p>Verteilung nach Getränketyp</p>
+            </div>
+            <span class="badge">Mix</span>
+          </div>
+          <canvas id="methodCanvas" class="chart-canvas small" height="220"></canvas>
+          <div id="methodBars" class="method-bars"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Peak-Zeiten</h2>
+              <p>Heatmap nach Tag und Uhrzeit</p>
+            </div>
+            <span id="peakHour" class="badge">–</span>
+          </div>
+          <div id="heatmap" class="heatmap"></div>
         </article>
       </div>
+    </section>
 
+    <section id="view-history" class="view">
       <article class="panel">
         <div class="panel-head">
-          <h2>Empfehlung aus deinen Daten</h2>
-          <span>automatisch</span>
+          <div>
+            <h2>Verlauf</h2>
+            <p>Kompakte Liste, neueste Einträge zuerst. Mobil: rechts wischen = bearbeiten, links wischen = löschen.</p>
+          </div>
+          <span id="entriesCount" class="badge">0 Einträge</span>
         </div>
-        <p id="recommendation" class="recommendation">
-          Trage ein paar Shots ein, dann kann die App erkennen, welcher Mahlgrad bei welcher Bohne am besten funktioniert.
-        </p>
+
+        <div class="filter-grid">
+          <label>
+            Datum filtern
+            <input id="filterDate" type="date" />
+          </label>
+
+          <label>
+            Getränk filtern
+            <select id="filterDrink">
+              <option value="">Alle Getränke</option>
+            </select>
+          </label>
+
+          <button id="clearFiltersBtn" class="secondary" type="button">Filter leeren</button>
+          <button id="deleteAllBtn" class="danger" type="button">Alle Einträge löschen</button>
+        </div>
+
+        <div id="entriesList" class="entries-list"></div>
       </article>
     </section>
 
-    <section id="view-shot" class="view">
+    <section id="view-grinder" class="view">
       <article class="panel">
         <div class="panel-head">
-          <h2>Neuen Espresso-Shot speichern</h2>
-          <span>36g Zielmenge</span>
-        </div>
-
-        <div class="form-grid">
-          <label>
-            Vorlage aus Mahlgrad-CSV
-            <select id="settingSelect">
-              <option value="">Manuell eintragen</option>
-            </select>
-          </label>
-
-          <label>
-            Favorit
-            <select id="favoriteSelect">
-              <option value="">Kein Favorit</option>
-            </select>
-          </label>
-
-          <label>
-            Datum
-            <input id="shotDate" type="date" />
-          </label>
-
-          <label>
-            Uhrzeit
-            <input id="shotTime" type="time" />
-          </label>
-
-          <label>
-            Marke/Rösterei
-            <input id="marke" type="text" placeholder="z. B. Pano Kaffee" />
-          </label>
-
-          <label>
-            Bohne
-            <input id="bohne" type="text" placeholder="z. B. Sipeo Espresso" />
-          </label>
-
-          <label>
-            Röstgrad
-            <input id="roestgrad" type="text" placeholder="z. B. Medium Dark Roast" />
-          </label>
-
-          <label>
-            Zusammensetzung
-            <input id="zusammensetzung" type="text" placeholder="z. B. 80% Arabica, 20% Robusta" />
-          </label>
-
-          <label>
-            Dosis in g
-            <input id="dose" type="number" inputmode="decimal" step="0.1" value="18" />
-          </label>
-
-          <label>
-            Output in g
-            <input id="yield" type="number" inputmode="decimal" step="0.1" value="36" />
-          </label>
-
-          <label>
-            Mahlgrad
-            <input id="mahlgrad" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 13.5" />
-          </label>
-
-          <label>
-            Extraktionszeit in s
-            <input id="extractionTime" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 25" />
-          </label>
-
-          <label>
-            Druck in Bar
-            <input id="pressure" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 9.0" />
-          </label>
-
-          <label>
-            Temperatur in °C
-            <input id="temperature" type="number" inputmode="decimal" step="0.1" placeholder="optional" />
-          </label>
-
-          <label>
-            Bewertung
-            <select id="rating">
-              <option value="">–</option>
-              <option value="1">1 – schlecht</option>
-              <option value="2">2 – geht so</option>
-              <option value="3">3 – okay</option>
-              <option value="4">4 – gut</option>
-              <option value="5">5 – sehr gut</option>
-            </select>
-          </label>
-
-          <label class="full">
-            Geschmack / Notizen
-            <textarea id="tasteNotes" rows="4" placeholder="z. B. gute Crema, leicht bitter, sauer, rund, wässrig ..."></textarea>
-          </label>
-        </div>
-
-        <div class="actions">
-          <button id="saveShotBtn" class="primary">Shot speichern</button>
-          <button id="saveFavoriteBtn" class="secondary">Als Favorit speichern</button>
-          <button id="resetFormBtn" class="ghost">Formular leeren</button>
-        </div>
-
-        <p id="formMessage" class="message"></p>
-      </article>
-    </section>
-
-    <section id="view-database" class="view">
-      <article class="panel">
-        <div class="panel-head">
-          <h2>Mahlgrad-Datenbank aus CSV</h2>
-          <span id="settingsCount">0 Einträge</span>
+          <div>
+            <h2>Mahlgrad-Datenbank</h2>
+            <p>Daten aus deiner Supabase-CSV.</p>
+          </div>
+          <span id="grinderCount" class="badge">0 Einträge</span>
         </div>
 
         <div class="toolbar">
-          <input id="settingsSearch" type="search" placeholder="Suche nach Marke, Bohne, Geschmack ..." />
-          <button id="reloadBtn" class="secondary">Neu laden</button>
+          <input id="grinderSearch" type="search" placeholder="Suche nach Marke, Bohne, Geschmack ..." />
         </div>
 
         <div class="table-wrap">
@@ -223,28 +299,140 @@
                 <th></th>
               </tr>
             </thead>
-            <tbody id="settingsTable"></tbody>
+            <tbody id="grinderTable"></tbody>
           </table>
         </div>
       </article>
     </section>
 
-    <section id="view-history" class="view">
+    <section id="view-equipment" class="view">
       <article class="panel">
         <div class="panel-head">
-          <h2>Shot-Verlauf</h2>
-          <span id="shotsCount">0 Shots</span>
+          <div>
+            <h2>Equipment</h2>
+            <p>Hinterlege Kaffeemaschine, Mühle, Zubehör, Kaufdatum und technische Fakten.</p>
+          </div>
+          <span id="equipmentCount" class="badge">0 Geräte</span>
         </div>
 
-        <div class="toolbar">
-          <input id="historySearch" type="search" placeholder="Suche nach Bohne, Mahlgrad, Notiz ..." />
-          <button id="deleteAllLocalFiltersBtn" class="secondary">Filter leeren</button>
+        <form id="equipmentForm" novalidate>
+          <div class="form-grid">
+            <label>
+              Kategorie
+              <select id="equipmentCategory">
+                <option value="Maschine">Maschine</option>
+                <option value="Mühle">Mühle</option>
+                <option value="Siebträger">Siebträger</option>
+                <option value="Waage">Waage</option>
+                <option value="Tamper">Tamper</option>
+                <option value="Zubehör">Zubehör</option>
+                <option value="Sonstiges">Sonstiges</option>
+              </select>
+            </label>
+
+            <label>
+              Name
+              <input id="equipmentName" type="text" placeholder="z. B. Lelit Mara X" />
+            </label>
+
+            <label>
+              Hersteller
+              <input id="equipmentBrand" type="text" placeholder="z. B. Lelit" />
+            </label>
+
+            <label>
+              Modell
+              <input id="equipmentModel" type="text" placeholder="z. B. PL62X" />
+            </label>
+
+            <label>
+              Kaufdatum
+              <input id="equipmentPurchaseDate" type="date" />
+            </label>
+
+            <label>
+              Preis in €
+              <input id="equipmentPrice" type="number" inputmode="decimal" step="0.01" placeholder="z. B. 999" />
+            </label>
+
+            <label class="full">
+              Fakten / technische Daten
+              <textarea id="equipmentFacts" rows="4" placeholder="z. B. E61 Brühgruppe, Vibrationspumpe, PID, 58mm Siebträger ..."></textarea>
+            </label>
+
+            <label class="full">
+              Notizen
+              <textarea id="equipmentNotes" rows="3" placeholder="z. B. gekauft gebraucht, Wartung, Dichtung gewechselt ..."></textarea>
+            </label>
+
+            <label class="checkbox-label full">
+              <input id="equipmentActive" type="checkbox" checked />
+              Aktiv / aktuell in Benutzung
+            </label>
+          </div>
+
+          <p id="equipmentMessage" class="message"></p>
+
+          <div class="actions">
+            <button id="saveEquipmentBtn" class="primary" type="submit">Equipment speichern</button>
+            <button id="cancelEquipmentEditBtn" class="ghost hidden" type="button">Bearbeiten abbrechen</button>
+            <button id="resetEquipmentBtn" class="ghost" type="button">Formular leeren</button>
+          </div>
+        </form>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Meine Ausstattung</h2>
+            <p>Klick auf einen Eintrag zum Bearbeiten.</p>
+          </div>
+          <span class="badge">Setup</span>
         </div>
 
-        <div id="shotsList" class="shots-list"></div>
+        <div id="equipmentList" class="equipment-list"></div>
+      </article>
+    </section>
+
+    <section id="view-settings" class="view">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Einstellungen</h2>
+            <p>Passe Limit und Einheit an.</p>
+          </div>
+          <span class="badge">Setup</span>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Tageslimit Koffein in mg
+            <input id="limitInput" type="number" inputmode="decimal" step="10" min="0" placeholder="400" />
+          </label>
+
+          <label>
+            Einheit
+            <select id="unitSelect">
+              <option value="ml">ml</option>
+              <option value="oz">oz</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="saveSettingsBtn" class="primary" type="button">Einstellungen speichern</button>
+        </div>
+
+        <p id="settingsMessage" class="message"></p>
       </article>
     </section>
   </main>
+
+  <button id="fabAdd" class="fab" type="button" aria-label="Neuen Eintrag hinzufügen">
+    +
+  </button>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>
