@@ -38,7 +38,6 @@ const $ = (id) => document.getElementById(id);
 
 const el = {
   tabs: $("tabs"),
-  navToggle: $("navToggle"),
   fabAdd: $("fabAdd"),
 
   quickCoffeeButtons: $("quickCoffeeButtons"),
@@ -347,10 +346,6 @@ function initTabs() {
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => openView(tab.dataset.view));
   });
-
-  el.navToggle.addEventListener("click", () => {
-    el.tabs.classList.toggle("open");
-  });
 }
 
 function openView(viewName) {
@@ -365,7 +360,8 @@ function openView(viewName) {
   const target = $(`view-${viewName}`);
   if (target) target.classList.add("active");
 
-  el.tabs.classList.remove("open");
+  // Scroll to top on view change (important on mobile)
+  window.scrollTo({ top: 0, behavior: "smooth" });
 
   if (viewName === "recommendations") renderRecommendations();
   if (viewName === "history") renderEntries();
@@ -917,7 +913,7 @@ function renderRecommendations() {
         <span>⭐ Ø ${formatNumber(rec.avg_rating, 1)}/5</span>
         <span>⏱️ Ø ${formatNumber(rec.avg_time, 1)}s</span>
         <span>🧭 Ø ${formatNumber(rec.avg_pressure, 1)} Bar</span>
-        <span>🎯 ${rec.hit_count}/${rec.shots_count} Treffer</span>
+        <span>🎯 ${rec.hit_count}/${rec.shots_count}</span>
         <span>Score ${rec.score}</span>
       </div>
 
@@ -1218,8 +1214,8 @@ function renderEntries() {
       card.tabIndex = 0;
 
       card.innerHTML = `
-        <div class="swipe-hint left">Bearbeiten</div>
-        <div class="swipe-hint right">Löschen</div>
+        <div class="swipe-hint left">✏️ Bearbeiten</div>
+        <div class="swipe-hint right">🗑️ Löschen</div>
 
         <div class="entry-main">
           <div class="entry-icon">${escapeHTML(getMethodIcon(entry.drink_type))}</div>
@@ -1230,18 +1226,18 @@ function renderEntries() {
               <span>${escapeHTML(formatEntryTime(entry.entry_time))}</span>
             </div>
 
-            <div class="entry-meta compact-meta">
+            <div class="entry-meta">
               <span>⚙️ MG ${formatNumber(entry.mahlgrad, 1)}</span>
               <span>⏱️ ${formatNumber(entry.extraction_time_s, 1)}s</span>
               <span>🧭 ${formatNumber(entry.pressure_bar, 1)} Bar</span>
-              <span>⚖️ ${formatNumber(entry.dose_g, 1)}g → ${formatNumber(entry.yield_g, 1)}g</span>
+              <span>⚖️ ${formatNumber(entry.dose_g, 1)}→${formatNumber(entry.yield_g, 1)}g</span>
               <span>⭐ ${entry.rating || "–"}/5</span>
-              <span>Score ${score}</span>
             </div>
 
             <div class="entry-meta secondary-meta">
               <span>${escapeHTML(equipmentName(entry.grinder_id))}</span>
               <span>${escapeHTML(entry.drink_type || "Espresso")}</span>
+              <span>Score ${score}</span>
             </div>
 
             ${entry.note ? `<p>${escapeHTML(entry.note)}</p>` : ""}
@@ -1627,7 +1623,7 @@ function renderHeatmap() {
       const cell = document.createElement("div");
       cell.className = "heatmap-cell";
       cell.title = `${weekdayLabel} ${hour}:00 – ${count} Shots`;
-      cell.style.opacity = count ? String(0.22 + intensity * 0.78) : "0.12";
+      cell.style.opacity = count ? String(0.22 + intensity * 0.78) : "0.1";
 
       el.heatmap.appendChild(cell);
     });
@@ -1743,7 +1739,7 @@ function renderEquipment() {
               <span>${item.is_active ? "Aktiv" : "Inaktiv"}</span>
             </div>
 
-            <div class="entry-meta compact-meta">
+            <div class="entry-meta">
               ${item.brand ? `<span>${escapeHTML(item.brand)}</span>` : ""}
               ${item.model ? `<span>${escapeHTML(item.model)}</span>` : ""}
               ${item.purchase_date ? `<span>Gekauft: ${formatDateShort(item.purchase_date)}</span>` : ""}
@@ -1893,7 +1889,7 @@ function setupCanvas(canvas) {
   const ratio = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   const width = rect.width || 400;
-  const height = Number(canvas.getAttribute("height")) || 260;
+  const height = Number(canvas.getAttribute("height")) || 220;
 
   canvas.width = Math.floor(width * ratio);
   canvas.height = Math.floor(height * ratio);
@@ -1909,15 +1905,15 @@ function drawBarWithAverage(canvas, labels, values, average, unit) {
   if (!setup) return;
 
   const { ctx, width, height } = setup;
-  const pad = 34;
+  const pad = 30;
   const chartW = width - pad * 2;
   const chartH = height - pad * 2;
 
   const max = Math.max(average, ...values, 1) * 1.25;
-  const barGap = 10;
-  const barW = Math.max(12, (chartW - barGap * (values.length - 1)) / values.length);
+  const barGap = 8;
+  const barW = Math.max(10, (chartW - barGap * (values.length - 1)) / values.length);
 
-  ctx.strokeStyle = "rgba(245,245,245,0.14)";
+  ctx.strokeStyle = "rgba(245,245,245,0.12)";
   ctx.lineWidth = 1;
 
   for (let i = 0; i <= 4; i++) {
@@ -1938,29 +1934,29 @@ function drawBarWithAverage(canvas, labels, values, average, unit) {
     grd.addColorStop(1, "#8b4513");
 
     ctx.fillStyle = grd;
-    roundRect(ctx, x, y, barW, h || 2, 7);
+    roundRect(ctx, x, y, barW, h || 2, 6);
     ctx.fill();
 
-    ctx.fillStyle = "rgba(245,245,245,0.72)";
-    ctx.font = "12px system-ui";
+    ctx.fillStyle = "rgba(245,245,245,0.68)";
+    ctx.font = "11px system-ui";
     ctx.textAlign = "center";
-    ctx.fillText(labels[index], x + barW / 2, height - 9);
+    ctx.fillText(labels[index], x + barW / 2, height - 8);
   });
 
   const avgY = pad + chartH - (average / max) * chartH;
 
-  ctx.strokeStyle = "#f5f5f5";
-  ctx.setLineDash([6, 6]);
+  ctx.strokeStyle = "rgba(245,245,245,0.85)";
+  ctx.setLineDash([5, 5]);
   ctx.beginPath();
   ctx.moveTo(pad, avgY);
   ctx.lineTo(width - pad, avgY);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.fillStyle = "#f5f5f5";
-  ctx.font = "12px system-ui";
+  ctx.fillStyle = "rgba(245,245,245,0.85)";
+  ctx.font = "11px system-ui";
   ctx.textAlign = "left";
-  ctx.fillText(`Ø ${formatNumber(average)} ${unit}`, pad, avgY - 8);
+  ctx.fillText(`Ø ${formatNumber(average)} ${unit}`, pad, avgY - 6);
 }
 
 function drawLineChart(canvas, labels, values, unit) {
@@ -1968,20 +1964,20 @@ function drawLineChart(canvas, labels, values, unit) {
   if (!setup) return;
 
   const { ctx, width, height } = setup;
-  const pad = 34;
+  const pad = 30;
   const chartW = width - pad * 2;
   const chartH = height - pad * 2;
 
   if (!values.length || values.every((v) => !v)) {
-    ctx.fillStyle = "rgba(245,245,245,0.72)";
-    ctx.font = "14px system-ui";
+    ctx.fillStyle = "rgba(245,245,245,0.68)";
+    ctx.font = "13px system-ui";
     ctx.fillText("Noch keine Daten", pad, height / 2);
     return;
   }
 
   const max = Math.max(...values, 1) * 1.2;
 
-  ctx.strokeStyle = "rgba(245,245,245,0.14)";
+  ctx.strokeStyle = "rgba(245,245,245,0.12)";
   ctx.lineWidth = 1;
 
   for (let i = 0; i <= 4; i++) {
@@ -1996,13 +1992,12 @@ function drawLineChart(canvas, labels, values, unit) {
   const yFor = (v) => pad + chartH - (v / max) * chartH;
 
   ctx.strokeStyle = "#ffcf8a";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2.5;
   ctx.beginPath();
 
   values.forEach((value, index) => {
     const x = xFor(index);
     const y = yFor(value);
-
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
@@ -2013,16 +2008,15 @@ function drawLineChart(canvas, labels, values, unit) {
 
   values.forEach((value, index) => {
     if (value <= 0) return;
-
     ctx.beginPath();
-    ctx.arc(xFor(index), yFor(value), 3.5, 0, Math.PI * 2);
+    ctx.arc(xFor(index), yFor(value), 3, 0, Math.PI * 2);
     ctx.fill();
   });
 
-  ctx.fillStyle = "rgba(245,245,245,0.72)";
-  ctx.font = "12px system-ui";
+  ctx.fillStyle = "rgba(245,245,245,0.68)";
+  ctx.font = "11px system-ui";
   ctx.textAlign = "left";
-  ctx.fillText(`${formatNumber(max)} ${unit}`, pad, 16);
+  ctx.fillText(`${formatNumber(max)} ${unit}`, pad, 14);
 }
 
 function drawDonut(canvas, items) {
@@ -2032,8 +2026,8 @@ function drawDonut(canvas, items) {
   const { ctx, width, height } = setup;
 
   if (!items.length) {
-    ctx.fillStyle = "rgba(245,245,245,0.72)";
-    ctx.font = "14px system-ui";
+    ctx.fillStyle = "rgba(245,245,245,0.68)";
+    ctx.font = "13px system-ui";
     ctx.fillText("Noch keine Daten", 24, height / 2);
     return;
   }
@@ -2041,8 +2035,8 @@ function drawDonut(canvas, items) {
   const total = items.reduce((sum, item) => sum + item[1], 0);
   const cx = width / 2;
   const cy = height / 2;
-  const radius = Math.min(width, height) * 0.32;
-  const lineWidth = 28;
+  const radius = Math.min(width, height) * 0.3;
+  const lineWidth = 24;
 
   const colors = ["#ffcf8a", "#d4a574", "#8b4513", "#b8753a", "#f0b36e", "#6a3514"];
 
@@ -2064,18 +2058,17 @@ function drawDonut(canvas, items) {
   });
 
   ctx.fillStyle = "#f5f5f5";
-  ctx.font = "700 22px system-ui";
+  ctx.font = "700 20px system-ui";
   ctx.textAlign = "center";
   ctx.fillText(String(total), cx, cy + 2);
 
-  ctx.fillStyle = "rgba(245,245,245,0.72)";
-  ctx.font = "12px system-ui";
-  ctx.fillText("Shots", cx, cy + 22);
+  ctx.fillStyle = "rgba(245,245,245,0.68)";
+  ctx.font = "11px system-ui";
+  ctx.fillText("Shots", cx, cy + 20);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
   const radius = Math.min(r, w / 2, h / 2);
-
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.arcTo(x + w, y, x + w, y + h, radius);
