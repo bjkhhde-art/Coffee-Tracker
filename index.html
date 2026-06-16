@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Coffee Tracker</title>
 
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
@@ -23,20 +23,7 @@
           <p class="subline">Tracke Shots und lass dir automatisch den besten Mahlgrad je Bohne berechnen.</p>
         </div>
       </div>
-
-      <button id="navToggle" class="nav-toggle" type="button" aria-label="Navigation öffnen">
-        ☰
-      </button>
     </header>
-
-    <nav id="tabs" class="tabs" aria-label="Navigation">
-      <button class="tab active" data-view="add" type="button">Shot</button>
-      <button class="tab" data-view="recommendations" type="button">Empfehlungen</button>
-      <button class="tab" data-view="history" type="button">Verlauf</button>
-      <button class="tab" data-view="dashboard" type="button">Auswertung</button>
-      <button class="tab" data-view="equipment" type="button">Equipment</button>
-      <button class="tab" data-view="settings" type="button">Einstellungen</button>
-    </nav>
 
     <section id="view-add" class="view active">
       <article class="panel">
@@ -60,7 +47,7 @@
 
         <form id="entryForm" novalidate>
           <div class="form-grid">
-            <label>
+            <label class="full">
               Kaffee / Bohne
               <input id="coffeeName" list="coffeeSuggestions" type="text" placeholder="z. B. Pano Sipeo Espresso" autocomplete="off" />
               <datalist id="coffeeSuggestions"></datalist>
@@ -77,6 +64,18 @@
                 <option value="Cold Brew">Cold Brew</option>
                 <option value="Kaffee">Kaffee</option>
                 <option value="Sonstiges">Sonstiges</option>
+              </select>
+            </label>
+
+            <label>
+              Bewertung
+              <select id="rating">
+                <option value="">–</option>
+                <option value="1">1 – schlecht</option>
+                <option value="2">2 – geht so</option>
+                <option value="3">3 – okay</option>
+                <option value="4">4 – gut</option>
+                <option value="5">5 – sehr gut</option>
               </select>
             </label>
 
@@ -140,21 +139,9 @@
               <input id="caffeineMg" type="number" inputmode="decimal" step="1" min="0" placeholder="80" />
             </label>
 
-            <label>
-              Bewertung
-              <select id="rating">
-                <option value="">–</option>
-                <option value="1">1 – schlecht</option>
-                <option value="2">2 – geht so</option>
-                <option value="3">3 – okay</option>
-                <option value="4">4 – gut</option>
-                <option value="5">5 – sehr gut</option>
-              </select>
-            </label>
-
             <label class="full">
               Geschmack / Notiz
-              <textarea id="note" rows="4" placeholder="z. B. gute Crema, etwas sauer, sehr rund ..."></textarea>
+              <textarea id="note" rows="3" placeholder="z. B. gute Crema, etwas sauer, sehr rund ..."></textarea>
             </label>
           </div>
 
@@ -175,7 +162,7 @@
       <article class="panel">
         <div class="panel-head">
           <div>
-            <h2>Automatische Mahlgrad-Empfehlungen</h2>
+            <h2>Mahlgrad-Empfehlungen</h2>
             <p>Berechnet aus deinen gespeicherten Shots je Kaffee und Mühle.</p>
           </div>
           <span id="recommendationsCount" class="badge">0 Empfehlungen</span>
@@ -190,7 +177,7 @@
         <div class="panel-head">
           <div>
             <h2>Verlauf</h2>
-            <p>Neueste Shots zuerst. Mobil: rechts wischen = bearbeiten, links wischen = löschen.</p>
+            <p>Neueste Shots zuerst. Rechts wischen = bearbeiten, links = löschen.</p>
           </div>
           <span id="entriesCount" class="badge">0 Shots</span>
         </div>
@@ -233,13 +220,13 @@
         <article class="card">
           <span class="card-label">Ø Shot-Zeit</span>
           <strong id="avgTime">–</strong>
-          <small>Zielbereich aus Einstellungen</small>
+          <small>Zielbereich</small>
         </article>
 
         <article class="card">
           <span class="card-label">Trefferquote</span>
           <strong id="hitRate">–</strong>
-          <small>Shots im Zielbereich</small>
+          <small>Shots im Ziel</small>
         </article>
       </div>
 
@@ -254,7 +241,7 @@
             </div>
             <span id="weekCompare" class="badge">–</span>
           </div>
-          <canvas id="weekCanvas" class="chart-canvas" height="260"></canvas>
+          <canvas id="weekCanvas" class="chart-canvas" height="220"></canvas>
         </article>
 
         <article class="panel">
@@ -265,7 +252,7 @@
             </div>
             <span id="trendBadge" class="badge">–</span>
           </div>
-          <canvas id="trendCanvas" class="chart-canvas" height="260"></canvas>
+          <canvas id="trendCanvas" class="chart-canvas" height="220"></canvas>
         </article>
 
         <article class="panel">
@@ -298,7 +285,7 @@
             </div>
             <span class="badge">Mix</span>
           </div>
-          <canvas id="methodCanvas" class="chart-canvas small" height="220"></canvas>
+          <canvas id="methodCanvas" class="chart-canvas small" height="200"></canvas>
           <div id="methodBars" class="method-bars"></div>
         </article>
 
@@ -320,7 +307,7 @@
         <div class="panel-head">
           <div>
             <h2>Equipment</h2>
-            <p>Hinterlege Kaffeemaschine, Mühle und Zubehör. Empfehlungen werden nach Mühle getrennt.</p>
+            <p>Kaffeemaschine, Mühle und Zubehör. Empfehlungen werden nach Mühle getrennt.</p>
           </div>
           <span id="equipmentCount" class="badge">0 Geräte</span>
         </div>
@@ -367,7 +354,7 @@
 
             <label class="full">
               Fakten / technische Daten
-              <textarea id="equipmentFacts" rows="4" placeholder="z. B. E61, 58mm, PID, Scheibendurchmesser ..."></textarea>
+              <textarea id="equipmentFacts" rows="3" placeholder="z. B. E61, 58mm, PID, Scheibendurchmesser ..."></textarea>
             </label>
 
             <label class="full">
@@ -395,7 +382,7 @@
         <div class="panel-head">
           <div>
             <h2>Meine Ausstattung</h2>
-            <p>Klick auf einen Eintrag zum Bearbeiten.</p>
+            <p>Tippe auf einen Eintrag zum Bearbeiten.</p>
           </div>
           <span class="badge">Setup</span>
         </div>
@@ -415,7 +402,7 @@
         </div>
 
         <div class="form-grid">
-          <label>
+          <label class="full">
             Tageslimit Koffein in mg
             <input id="limitInput" type="number" inputmode="decimal" step="10" min="0" placeholder="400" />
           </label>
@@ -450,9 +437,35 @@
     </section>
   </main>
 
-  <button id="fabAdd" class="fab" type="button" aria-label="Neuen Shot hinzufügen">
-    +
-  </button>
+  <!-- Bottom Navigation -->
+  <nav id="tabs" class="tabs" aria-label="Navigation">
+    <button class="tab active" data-view="add" type="button">
+      <span class="tab-icon">☕</span>
+      <span class="tab-label">Shot</span>
+    </button>
+    <button class="tab" data-view="recommendations" type="button">
+      <span class="tab-icon">✨</span>
+      <span class="tab-label">Tipps</span>
+    </button>
+    <button class="tab" data-view="history" type="button">
+      <span class="tab-icon">📋</span>
+      <span class="tab-label">Verlauf</span>
+    </button>
+    <button class="tab" data-view="dashboard" type="button">
+      <span class="tab-icon">📊</span>
+      <span class="tab-label">Stats</span>
+    </button>
+    <button class="tab" data-view="equipment" type="button">
+      <span class="tab-icon">⚙️</span>
+      <span class="tab-label">Setup</span>
+    </button>
+    <button class="tab" data-view="settings" type="button">
+      <span class="tab-icon">🔧</span>
+      <span class="tab-label">Mehr</span>
+    </button>
+  </nav>
+
+  <button id="fabAdd" class="fab" type="button" aria-label="Neuen Shot hinzufügen">+</button>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
