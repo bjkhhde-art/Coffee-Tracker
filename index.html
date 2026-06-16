@@ -167,7 +167,6 @@
           </div>
           <span id="recommendationsCount" class="badge">0 Empfehlungen</span>
         </div>
-
         <div id="recommendationsList" class="recommendations-list"></div>
       </article>
     </section>
@@ -187,14 +186,12 @@
             Datum filtern
             <input id="filterDate" type="date" />
           </label>
-
           <label>
             Kaffee filtern
             <select id="filterCoffee">
               <option value="">Alle Kaffees</option>
             </select>
           </label>
-
           <button id="clearFiltersBtn" class="secondary" type="button">Filter leeren</button>
           <button id="deleteAllBtn" class="danger" type="button">Alle Shots löschen</button>
         </div>
@@ -210,19 +207,16 @@
           <strong id="todayCount">0</strong>
           <small>gespeicherte Shots</small>
         </article>
-
         <article class="card">
           <span class="card-label">Koffein heute</span>
           <strong id="todayCaffeine">0 mg</strong>
           <small id="limitText">Limit: 400 mg</small>
         </article>
-
         <article class="card">
           <span class="card-label">Ø Shot-Zeit</span>
           <strong id="avgTime">–</strong>
           <small>Zielbereich</small>
         </article>
-
         <article class="card">
           <span class="card-label">Trefferquote</span>
           <strong id="hitRate">–</strong>
@@ -233,6 +227,22 @@
       <p id="overLimitHint" class="limit-warning hidden"></p>
 
       <div class="stats-grid">
+
+        <!-- ⚡ Shelly Panel -->
+        <article class="panel shelly-panel">
+          <div class="panel-head">
+            <div>
+              <h2>⚡ Kaffeemaschine</h2>
+              <p id="shellySubline">Shelly Plug S – Energieverbrauch</p>
+            </div>
+            <span id="shellyStatusBadge" class="badge">–</span>
+          </div>
+          <div id="shellyContent">
+            <div class="empty">Shelly IP-Adresse in den Einstellungen eintragen.</div>
+          </div>
+          <p id="shellyUpdateTime" class="shelly-update-time"></p>
+        </article>
+
         <article class="panel">
           <div class="panel-head">
             <div>
@@ -299,6 +309,7 @@
           </div>
           <div id="heatmap" class="heatmap"></div>
         </article>
+
       </div>
     </section>
 
@@ -326,42 +337,34 @@
                 <option value="Sonstiges">Sonstiges</option>
               </select>
             </label>
-
             <label>
               Name
               <input id="equipmentName" type="text" placeholder="z. B. Lelit Mara X" />
             </label>
-
             <label>
               Hersteller
               <input id="equipmentBrand" type="text" placeholder="z. B. Lelit" />
             </label>
-
             <label>
               Modell
               <input id="equipmentModel" type="text" placeholder="z. B. PL62X" />
             </label>
-
             <label>
               Kaufdatum
               <input id="equipmentPurchaseDate" type="date" />
             </label>
-
             <label>
               Preis in €
               <input id="equipmentPrice" type="number" inputmode="decimal" step="0.01" placeholder="z. B. 999" />
             </label>
-
             <label class="full">
               Fakten / technische Daten
               <textarea id="equipmentFacts" rows="3" placeholder="z. B. E61, 58mm, PID, Scheibendurchmesser ..."></textarea>
             </label>
-
             <label class="full">
               Notizen
               <textarea id="equipmentNotes" rows="3" placeholder="z. B. Wartung, Umbauten, Dichtungen ..."></textarea>
             </label>
-
             <label class="checkbox-label full">
               <input id="equipmentActive" type="checkbox" checked />
               Aktiv / aktuell in Benutzung
@@ -386,12 +389,12 @@
           </div>
           <span class="badge">Setup</span>
         </div>
-
         <div id="equipmentList" class="equipment-list"></div>
       </article>
     </section>
 
     <section id="view-settings" class="view">
+      <!-- Zielwerte -->
       <article class="panel">
         <div class="panel-head">
           <div>
@@ -406,22 +409,18 @@
             Tageslimit Koffein in mg
             <input id="limitInput" type="number" inputmode="decimal" step="10" min="0" placeholder="400" />
           </label>
-
           <label>
             Zielzeit min. in s
             <input id="targetTimeMin" type="number" inputmode="decimal" step="0.1" placeholder="25" />
           </label>
-
           <label>
             Zielzeit max. in s
             <input id="targetTimeMax" type="number" inputmode="decimal" step="0.1" placeholder="30" />
           </label>
-
           <label>
             Zieldruck min. in Bar
             <input id="targetPressureMin" type="number" inputmode="decimal" step="0.1" placeholder="8" />
           </label>
-
           <label>
             Zieldruck max. in Bar
             <input id="targetPressureMax" type="number" inputmode="decimal" step="0.1" placeholder="10" />
@@ -431,8 +430,39 @@
         <div class="actions">
           <button id="saveSettingsBtn" class="primary" type="button">Einstellungen speichern</button>
         </div>
-
         <p id="settingsMessage" class="message"></p>
+      </article>
+
+      <!-- Shelly Einstellungen -->
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>⚡ Shelly Steckdose</h2>
+            <p>Energieverbrauch der Kaffeemaschine tracken.</p>
+          </div>
+          <span class="badge">Lokal</span>
+        </div>
+
+        <div class="shelly-setup-hint">
+          <p>⚠️ <strong>Einmaliger Setup:</strong> Öffne <span id="shellyHintUrl">https://&lt;IP&gt;/</span> einmal im Browser und akzeptiere die Sicherheitswarnung (selbst-signiertes Zertifikat). Danach funktioniert die Verbindung automatisch.</p>
+        </div>
+
+        <div class="form-grid">
+          <label class="full">
+            IP-Adresse der Shelly
+            <input id="shellyIp" type="text" inputmode="url" placeholder="z. B. 192.168.1.42" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+          </label>
+          <label class="full">
+            Strompreis in €/kWh
+            <input id="shellyPrice" type="number" inputmode="decimal" step="0.01" placeholder="0.35" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="saveShellyBtn" class="primary" type="button">Shelly speichern</button>
+          <button id="testShellyBtn" class="secondary" type="button">Verbindung testen</button>
+        </div>
+        <p id="shellySettingsMessage" class="message"></p>
       </article>
     </section>
   </main>
@@ -466,7 +496,6 @@
   </nav>
 
   <button id="fabAdd" class="fab" type="button" aria-label="Neuen Shot hinzufügen">+</button>
-
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
