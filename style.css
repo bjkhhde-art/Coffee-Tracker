@@ -1180,3 +1180,105 @@ label {
   /* Method row desktop */
   .method-row { grid-template-columns: 32px 1fr 90px auto; }
 }
+
+/* ============================================================
+   Shelly Integration
+   ============================================================ */
+
+.shelly-panel {
+  grid-column: 1 / -1;
+}
+
+.shelly-setup-hint {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: rgba(212, 165, 116, 0.08);
+  border: 1px solid rgba(212, 165, 116, 0.22);
+  margin-bottom: var(--space-2);
+  font-size: 0.86rem;
+}
+
+.shelly-setup-hint p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.shelly-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1);
+}
+
+.shelly-stat {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+}
+
+.shelly-stat-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.shelly-stat-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.shelly-stat-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.shelly-stat.is-on   .shelly-stat-value { color: var(--success); }
+.shelly-stat.is-off  .shelly-stat-value { color: var(--muted); }
+.shelly-stat.is-warm .shelly-stat-value { color: var(--warning); }
+
+.shelly-error {
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 112, 102, 0.3);
+  background: rgba(255, 112, 102, 0.07);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.shelly-error a {
+  color: var(--accent-light);
+  text-decoration: underline;
+}
+
+.shelly-update-time {
+  margin-top: var(--space-1);
+  margin-bottom: 0;
+  font-size: 0.72rem;
+  color: rgba(245, 245, 245, 0.35);
+  text-align: right;
+}
+
+.shelly-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.shelly-actions button {
+  flex: 1;
+  padding: 10px;
+  font-size: 0.85rem;
+}
+
+@media (min-width: 768px) {
+  .shelly-stats {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
