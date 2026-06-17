@@ -1327,3 +1327,22 @@ label {
   font-size: 1.2rem; cursor: pointer; padding: 4px 8px;
 }
 .cleaning-item .del:hover { color: var(--danger); }
+
+.cleaning-info-note {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(212, 165, 116, 0.08);
+  border: 1px solid rgba(212, 165, 116, 0.18);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.cleaning-flag-fresh {
+  color: var(--success) !important;
+  font-weight: 600;
+}
+.cleaning-flag-old {
+  color: var(--warning) !important;
+  font-weight: 600;
+}
