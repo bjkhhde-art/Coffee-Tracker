@@ -730,12 +730,17 @@ function recommendationKey(e) { return `${normalize(e.drink_name)}__${e.grinder_
 
 function buildRecommendations(entries) {
   const groups = new Map();
-  entries.filter(e => e.drink_name && e.mahlgrad !== null && e.mahlgrad !== undefined).forEach(e => {
-    const k = recommendationKey(e);
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(e);
-  });
-  return Array.from(groups.values()).map(buildRecommendationFromGroup).sort((a,b) => b.score - a.score);
+  entries
+    .filter(e => e.drink_name && e.mahlgrad !== null && e.mahlgrad !== undefined)
+    .filter(isShotAfterLastBigCleaning)   // <-- NEU: nur Shots seit letzter großer Reinigung
+    .forEach(e => {
+      const k = recommendationKey(e);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(e);
+    });
+  return Array.from(groups.values())
+    .map(buildRecommendationFromGroup)
+    .sort((a,b) => b.score - a.score);
 }
 
 function buildRecommendationFromGroup(group) {
@@ -746,6 +751,7 @@ function buildRecommendationFromGroup(group) {
   const grinds    = baseShots.map(e => Number(e.mahlgrad)).filter(Number.isFinite).sort((a,b) => a-b);
   const avg = arr => arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : null;
   const confidence = group.length >= 6 ? "stabil" : group.length >= 3 ? "vorläufig" : "erster Richtwert";
+  cleaning_info: buildCleaningInfo(best.grinder_id),
   return {
     coffee_name:  best.drink_name,
     grinder_id:   best.grinder_id || null,
@@ -764,6 +770,13 @@ function buildRecommendationFromGroup(group) {
     confidence,
     hint:         buildGrindHint(best),
   };
+}
+
+function buildCleaningInfo(grinderId) {
+  const date = getLastBigCleaningDate(grinderId);
+  if (!date) return null;
+  const days = daysSince(date);
+  return `🧽 Basis: Shots seit letzter großer Reinigung (${formatDateShort(date)}, vor ${days}d)`;
 }
 
 function buildGrindHint(entry) {
@@ -844,6 +857,7 @@ function renderRecommendations() {
         <span>Score ${rec.score}</span>
       </div>
       <p>${escapeHTML(rec.hint)}</p>
+      ${rec.cleaning_info ? `<p class="cleaning-info-note">${escapeHTML(rec.cleaning_info)}</p>` : ""}
       <div class="actions compact-actions">
         <button class="primary use-rec-btn" type="button">Für neuen Shot nutzen</button>
       </div>`;
@@ -908,6 +922,9 @@ function readEntryForm() {
     note:             el.note.value.trim() || null,
     machine_id:       el.machineSelect.value ? Number(el.machineSelect.value) : null,
     grinder_id:       el.grinderSelect.value ? Number(el.grinderSelect.value) : null,
+    grinder_cleaning_id: el.grinderSelect.value
+      ? getLatestCleaningId(Number(el.grinderSelect.value))
+      : null,
   };
 }
 
@@ -1053,6 +1070,11 @@ function renderEntries() {
               <span>${escapeHTML(equipmentName(entry.grinder_id))}</span>
               <span>${escapeHTML(entry.drink_type || "Espresso")}</span>
               <span>Score ${score}</span>
+              ${entry.grinder_id && !isShotAfterLastBigCleaning(entry)
+                ? `<span class="cleaning-flag-old">vor letzter Reinigung</span>`
+                : entry.grinder_cleaning_id
+                  ? `<span class="cleaning-flag-fresh">🧽 nach Reinigung</span>`
+                  : ""}
             </div>
             ${entry.note ? `<p>${escapeHTML(entry.note)}</p>` : ""}
           </div>
@@ -1613,6 +1635,8 @@ async function saveCleaning(event) {
   showToast("Reinigung gespeichert 🧽");
   resetCleaningForm();
   await loadCleaningLogs();
+  state.recommendations = buildRecommendations(state.entries);
+  renderAll();
   renderCleaning();
 }
 
@@ -1631,6 +1655,30 @@ async function deleteCleaning(id) {
   showToast("Eintrag gelöscht.");
   await loadCleaningLogs();
   renderCleaning();
+}
+
+/* Letzte Reinigung (egal welcher Typ) für eine Mühle */
+function getLatestCleaningId(grinderId) {
+  if (!grinderId) return null;
+  const last = state.cleaningLogs.find(c => String(c.equipment_id) === String(grinderId));
+  return last ? last.id : null;
+}
+
+/* Letzte GROSSE Reinigung für eine Mühle (zum Filtern der Empfehlungen) */
+function getLastBigCleaningDate(grinderId) {
+  if (!grinderId) return null;
+  const last = state.cleaningLogs.find(c =>
+    String(c.equipment_id) === String(grinderId) && c.cleaning_type === "gross"
+  );
+  return last ? last.cleaned_at : null;
+}
+
+/* Ist der Shot nach der letzten großen Reinigung entstanden? */
+function isShotAfterLastBigCleaning(entry) {
+  if (!entry.grinder_id || !entry.entry_date) return true;
+  const cleanDate = getLastBigCleaningDate(entry.grinder_id);
+  if (!cleanDate) return true;
+  return entry.entry_date >= cleanDate;
 }
 
 init();
