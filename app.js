@@ -304,26 +304,18 @@ function loadShellySettings() {
     const raw = localStorage.getItem("ct_shelly");
     if (raw) {
       const s = JSON.parse(raw);
-      state.shelly.ip    = s.ip    || "";
       state.shelly.price = Number(s.price) || 0.35;
     }
   } catch { /* ignore */ }
-  el.shellyIp.value    = state.shelly.ip;
   el.shellyPrice.value = state.shelly.price;
-  updateShellyHint();
 }
 
 function saveShellySettings() {
-  const ip    = el.shellyIp.value.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
   const price = toNumber(el.shellyPrice.value) ?? 0.35;
-  if (!ip) { setShellySettingsMessage("Bitte IP-Adresse eintragen.", "error"); return; }
-  state.shelly.ip    = ip;
   state.shelly.price = price;
-  el.shellyIp.value  = ip;
-  try { localStorage.setItem("ct_shelly", JSON.stringify({ ip, price })); } catch { /* ignore */ }
-  updateShellyHint();
-  setShellySettingsMessage("Shelly-Einstellungen gespeichert.");
-  showToast("Shelly gespeichert ⚡");
+  try { localStorage.setItem("ct_shelly", JSON.stringify({ price })); } catch { /* ignore */ }
+  setShellySettingsMessage("Strompreis gespeichert.");
+  showToast("Strompreis gespeichert ⚡");
   if ($("view-dashboard").classList.contains("active")) renderShellyPanel();
 }
 
@@ -576,11 +568,6 @@ function initEvents() {
 
   el.saveSettingsBtn.addEventListener("click", saveSettings);
   el.saveShellyBtn.addEventListener("click",   saveShellySettings);
-  el.testShellyBtn.addEventListener("click",   testShellyConnection);
-  el.shellyIp.addEventListener("input", () => {
-    const ip = el.shellyIp.value.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
-    if (el.shellyHintUrl) el.shellyHintUrl.textContent = `https://${ip || "<IP>"}/`;
-  });
 
   el.fabAdd.addEventListener("click", () => { cancelEdit(); openView("add"); setTimeout(() => el.coffeeName?.focus(), 80); });
   window.addEventListener("resize", () => { if ($("view-dashboard").classList.contains("active")) renderDashboard(); });
