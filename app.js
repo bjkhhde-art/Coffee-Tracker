@@ -8,6 +8,7 @@ const SUPABASE_ANON_KEY= "sb_publishable_uunR3UQ9rttiK8dG85IedQ__Tn1duVK";
 const TABLE_ENTRIES    = "coffee_entries";
 const TABLE_EQUIPMENT  = "coffee_equipment";
 const TABLE_SETTINGS   = "coffee_user_settings";
+const TABLE_CLEANING = "coffee_cleaning_logs";
 
 const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -17,6 +18,7 @@ const state = {
   isLoading: true,
   entries: [],
   equipment: [],
+  cleaningLogs: [],
   recommendations: [],
   editingId: null,
   editingEquipmentId: null,
@@ -140,6 +142,18 @@ const el = {
   settingsMessage:   $("settingsMessage"),
 
   toast: $("toast"),
+
+  cleaningForm:       $("cleaningForm"),
+  cleaningEquipment:  $("cleaningEquipment"),
+  cleaningType:       $("cleaningType"),
+  cleaningDate:       $("cleaningDate"),
+  cleaningNotes:      $("cleaningNotes"),
+  cleaningMessage:    $("cleaningMessage"),
+  cleaningCount:      $("cleaningCount"),
+  cleaningStatus:     $("cleaningStatus"),
+  cleaningList:       $("cleaningList"),
+  saveCleaningBtn:    $("saveCleaningBtn"),
+  resetCleaningBtn:   $("resetCleaningBtn"),
 };
 
 
@@ -498,6 +512,7 @@ function initFormDefaults() {
   el.doseG.value      = "18";
   el.yieldG.value     = "36";
   el.caffeineMg.value = "80";
+  el.cleaningDate.value = todayISO();
 }
 
 function initTabs() {
@@ -525,6 +540,9 @@ function openView(viewName) {
 }
 
 function initEvents() {
+  el.cleaningForm.addEventListener("submit", saveCleaning);
+  el.resetCleaningBtn.addEventListener("click", resetCleaningForm);
+   
   el.entryForm.addEventListener("submit", saveEntry);
   el.resetFormBtn.addEventListener("click", resetForm);
   el.cancelEditBtn.addEventListener("click", cancelEdit);
@@ -568,7 +586,7 @@ function initEvents() {
 async function reloadAll() {
   state.isLoading = true;
   renderSkeletons();
-  await Promise.all([loadSettings(), loadEntries(), loadEquipment()]);
+  await Promise.all([loadSettings(), loadEntries(), loadEquipment(), loadCleaningLogs()]);
   state.recommendations = buildRecommendations(state.entries);
   state.isLoading = false;
   renderAll();
@@ -621,6 +639,7 @@ function renderAll() {
   renderEntries();
   renderDashboard();
   renderEquipment();
+  renderCleaning();
   updateCurrentRecommendation();
 }
 
@@ -1455,6 +1474,163 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y+h, x, y, radius);
   ctx.arcTo(x, y, x+w, y, radius);
   ctx.closePath();
+}
+
+/* ============================================================
+   Cleaning Protocol
+   ============================================================ */
+
+// Schwellen in Tagen
+const CLEANING_THRESHOLDS = {
+  klein: { ok: 3,  warn: 7  },   // klein: ok < 3d, warn 3-7d, danach late
+  gross: { ok: 14, warn: 30 },   // gross: ok < 14d, warn 14-30d, danach late
+};
+
+async function loadCleaningLogs() {
+  const { data, error } = await supabaseClient
+    .from(TABLE_CLEANING).select("*")
+    .order("cleaned_at", { ascending: false });
+  if (error) { console.error("Cleaning:", error); state.cleaningLogs = []; return; }
+  state.cleaningLogs = data || [];
+}
+
+function renderCleaningEquipmentSelect() {
+  const cur = el.cleaningEquipment.value;
+  const items = state.equipment.filter(i =>
+    normalize(i.category).includes("maschine") || normalize(i.category).includes("muhle")
+  );
+  el.cleaningEquipment.innerHTML = `<option value="">Bitte wählen …</option>`;
+  items.forEach(i => {
+    const o = document.createElement("option");
+    o.value = i.id;
+    o.textContent = `${getEquipmentIcon(i.category)} ${equipmentLabel(i)}`;
+    el.cleaningEquipment.appendChild(o);
+  });
+  if (cur) el.cleaningEquipment.value = cur;
+}
+
+function daysSince(dateStr) {
+  if (!dateStr) return Infinity;
+  const ms = Date.now() - new Date(`${dateStr}T00:00:00`).getTime();
+  return Math.floor(ms / 86400000);
+}
+
+function getLastCleaning(equipmentId, type) {
+  return state.cleaningLogs.find(c =>
+    String(c.equipment_id) === String(equipmentId) && c.cleaning_type === type
+  ) || null;
+}
+
+function cleaningStatusClass(days, type) {
+  const t = CLEANING_THRESHOLDS[type];
+  if (days <= t.ok)   return "is-ok";
+  if (days <= t.warn) return "is-due";
+  return "is-late";
+}
+
+function renderCleaning() {
+  renderCleaningEquipmentSelect();
+  renderCleaningStatus();
+  renderCleaningList();
+  el.cleaningCount.textContent = `${state.cleaningLogs.length} Einträge`;
+}
+
+function renderCleaningStatus() {
+  el.cleaningStatus.innerHTML = "";
+  const items = state.equipment.filter(i =>
+    i.is_active && (normalize(i.category).includes("maschine") || normalize(i.category).includes("muhle"))
+  );
+  if (!items.length) {
+    el.cleaningStatus.innerHTML = `<div class="empty compact">Keine aktiven Geräte vorhanden.</div>`;
+    return;
+  }
+  items.forEach(item => {
+    ["klein", "gross"].forEach(type => {
+      const last = getLastCleaning(item.id, type);
+      const days = last ? daysSince(last.cleaned_at) : Infinity;
+      const cls  = last ? cleaningStatusClass(days, type) : "is-late";
+      const label= type === "klein" ? "🧴 Klein" : "🧽 Groß";
+      const text = last
+        ? (days === 0 ? "heute" : days === 1 ? "gestern" : `vor ${days} Tagen`)
+        : "noch nie";
+      const row = document.createElement("div");
+      row.className = `cleaning-status-row ${cls}`;
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHTML(equipmentLabel(item))}</strong>
+          <small> · ${label}</small>
+        </div>
+        <span class="badge">${text}</span>`;
+      el.cleaningStatus.appendChild(row);
+    });
+  });
+}
+
+function renderCleaningList() {
+  el.cleaningList.innerHTML = "";
+  if (!state.cleaningLogs.length) {
+    el.cleaningList.innerHTML = `<div class="empty compact">Noch keine Reinigungen protokolliert.</div>`;
+    return;
+  }
+  state.cleaningLogs.slice(0, 30).forEach(log => {
+    const item = getEquipmentById(log.equipment_id);
+    const name = item ? equipmentLabel(item) : "Unbekanntes Gerät";
+    const icon = log.cleaning_type === "klein" ? "🧴" : "🧽";
+    const row  = document.createElement("div");
+    row.className = "cleaning-item";
+    row.innerHTML = `
+      <div>
+        <strong>${icon} ${escapeHTML(name)}</strong>
+        <div class="meta">${formatDateShort(log.cleaned_at)}${log.notes ? " · " + escapeHTML(log.notes) : ""}</div>
+      </div>
+      <button class="del" type="button" aria-label="Löschen">×</button>`;
+    row.querySelector(".del").addEventListener("click", () => deleteCleaning(log.id));
+    el.cleaningList.appendChild(row);
+  });
+}
+
+async function saveCleaning(event) {
+  event.preventDefault();
+  const equipment_id = el.cleaningEquipment.value;
+  if (!equipment_id) {
+    setMsg(el.cleaningMessage, "Bitte ein Gerät wählen.", "error");
+    return;
+  }
+  const payload = {
+    equipment_id:  Number(equipment_id),
+    cleaning_type: el.cleaningType.value,
+    cleaned_at:    el.cleaningDate.value || todayISO(),
+    notes:         el.cleaningNotes.value.trim() || null,
+  };
+  setButtonLoading(el.saveCleaningBtn, true, "Speichere ...", "Reinigung speichern");
+  const { error } = await supabaseClient.from(TABLE_CLEANING).insert(payload);
+  setButtonLoading(el.saveCleaningBtn, false, "Speichere ...", "Reinigung speichern");
+  if (error) {
+    console.error("Cleaning save:", error);
+    setMsg(el.cleaningMessage, `Speichern fehlgeschlagen: ${error.message}`, "error");
+    return;
+  }
+  showToast("Reinigung gespeichert 🧽");
+  resetCleaningForm();
+  await loadCleaningLogs();
+  renderCleaning();
+}
+
+function resetCleaningForm() {
+  el.cleaningEquipment.value = "";
+  el.cleaningType.value      = "klein";
+  el.cleaningDate.value      = todayISO();
+  el.cleaningNotes.value     = "";
+  setMsg(el.cleaningMessage, "");
+}
+
+async function deleteCleaning(id) {
+  if (!window.confirm("Diesen Reinigungseintrag löschen?")) return;
+  const { error } = await supabaseClient.from(TABLE_CLEANING).delete().eq("id", id);
+  if (error) { console.error(error); showToast("Löschen fehlgeschlagen."); return; }
+  showToast("Eintrag gelöscht.");
+  await loadCleaningLogs();
+  renderCleaning();
 }
 
 init();
