@@ -9,6 +9,7 @@ const TABLE_ENTRIES    = "coffee_entries";
 const TABLE_EQUIPMENT  = "coffee_equipment";
 const TABLE_SETTINGS   = "coffee_user_settings";
 const TABLE_CLEANING = "coffee_cleaning_logs";
+const TABLE_SHELLY_LOGS = "coffee_shelly_logs";
 
 const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -358,16 +359,27 @@ function getShellyTodayKwh(currentWh) {
 -------------------------------------------------------------- */
 
 async function fetchShellyStatus() {
-  const { ip } = state.shelly;
-  if (!ip) return null;
   try {
-    const res = await fetch(`https://${ip}/rpc/Switch.GetStatus?id=0`, {
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    // Letzten Eintrag aus Supabase holen
+    const { data, error } = await supabaseClient
+      .from(TABLE_SHELLY_LOGS)
+      .select("*")
+      .order("recorded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return null;
+
+    // Auf das gleiche Format mappen, das renderShellyPanel erwartet
+    return {
+      output: data.output,
+      apower: Number(data.apower_w) || 0,
+      aenergy: { total: Number(data.aenergy_wh) || 0 },
+      temperature: data.temperature_c != null ? { tC: Number(data.temperature_c) } : null,
+      _recorded_at: data.recorded_at,   // für Anzeige „zuletzt aktualisiert"
+    };
   } catch (err) {
-    console.warn("Shelly:", err.message);
+    console.warn("Shelly-Logs:", err);
     return null;
   }
 }
@@ -394,13 +406,10 @@ async function renderShellyPanel() {
   if (!data) {
     el.shellyContent.innerHTML = `
       <div class="shelly-error">
-        ⚠️ Shelly nicht erreichbar.<br><br>
-        <strong>Einmalige Einrichtung:</strong> Öffne
-        <a href="https://${escapeHTML(ip)}/" target="_blank" rel="noopener">https://${escapeHTML(ip)}/</a>
-        im Browser, tippe auf „Erweitert" und akzeptiere das selbst-signierte Zertifikat –
-        danach funktioniert die Verbindung automatisch.
+        ⚠️ Noch keine Shelly-Daten in der Datenbank.<br><br>
+        Prüfe ob das Skript auf der Shelly läuft (Shelly-App → Skripte → Status sollte „läuft" sein).
       </div>`;
-    el.shellyStatusBadge.textContent = "Offline";
+    el.shellyStatusBadge.textContent = "Keine Daten";
     el.shellyUpdateTime.textContent  = "";
     return;
   }
@@ -451,14 +460,21 @@ async function renderShellyPanel() {
       </div>` : ""}
     </div>`;
 
-  const now = new Date();
-  el.shellyUpdateTime.textContent =
-    `Aktualisiert: ${now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+  if (data._recorded_at) {
+    const recorded = new Date(data._recorded_at);
+    const ageSec   = Math.floor((Date.now() - recorded.getTime()) / 1000);
+    const ageText  = ageSec < 60
+      ? `vor ${ageSec}s`
+      : ageSec < 3600
+        ? `vor ${Math.floor(ageSec/60)} min`
+        : `vor ${Math.floor(ageSec/3600)} h`;
+    el.shellyUpdateTime.textContent = `Letzter Push: ${recorded.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} (${ageText})`;
+  }
 }
 
 function startShellyPolling() {
   stopShellyPolling();
-  if (state.shelly.ip) shellyPollTimer = setInterval(renderShellyPanel, 10000);
+  if (state.shelly.ip) shellyPollTimer = setInterval(renderShellyPanel, 30000);
 }
 
 function stopShellyPolling() {
@@ -466,22 +482,21 @@ function stopShellyPolling() {
 }
 
 async function testShellyConnection() {
-  const ip = el.shellyIp.value.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
-  if (!ip) { setShellySettingsMessage("Bitte erst IP-Adresse eintragen.", "error"); return; }
   setButtonLoading(el.testShellyBtn, true, "Teste …", "Verbindung testen");
-  try {
-    const res  = await fetch(`https://${ip}/rpc/Switch.GetStatus?id=0`, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const w    = Number(data.apower ?? 0);
-    setShellySettingsMessage(`✅ Verbindung OK! Aktuelle Leistung: ${w.toFixed(0)} W`);
-  } catch {
-    setShellySettingsMessage(
-      `❌ Nicht erreichbar. Öffne einmalig https://${ip}/ im Browser und akzeptiere das Zertifikat.`,
-      "error"
-    );
-  }
+  const { data, error } = await supabaseClient
+    .from(TABLE_SHELLY_LOGS)
+    .select("recorded_at, apower_w, output")
+    .order("recorded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   setButtonLoading(el.testShellyBtn, false, "Teste …", "Verbindung testen");
+
+  if (error || !data) {
+    setShellySettingsMessage("❌ Keine Daten in der DB. Läuft das Shelly-Skript?", "error");
+    return;
+  }
+  const ageSec = Math.floor((Date.now() - new Date(data.recorded_at).getTime()) / 1000);
+  setShellySettingsMessage(`✅ Letzter Push vor ${ageSec}s · ${data.output ? "An" : "Aus"} · ${Number(data.apower_w).toFixed(0)} W`);
 }
 
 
