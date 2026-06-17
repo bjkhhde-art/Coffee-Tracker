@@ -1282,3 +1282,48 @@ label {
     grid-template-columns: repeat(6, 1fr);
   }
 }
+
+/* ============================================================
+   Cleaning Protocol
+   ============================================================ */
+.cleaning-status {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+}
+.cleaning-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+}
+.cleaning-status-row strong { font-size: 0.92rem; }
+.cleaning-status-row small  { color: var(--muted); font-size: 0.78rem; }
+.cleaning-status-row .badge { white-space: nowrap; }
+
+.cleaning-status-row.is-ok    .badge { color: var(--success); }
+.cleaning-status-row.is-due   .badge { color: var(--warning); }
+.cleaning-status-row.is-late  .badge { color: var(--danger); }
+
+.cleaning-list { display: grid; gap: 8px; margin-top: var(--space-2); }
+.cleaning-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+.cleaning-item .meta { color: var(--muted); font-size: 0.78rem; }
+.cleaning-item .del {
+  background: transparent; border: none; color: var(--muted);
+  font-size: 1.2rem; cursor: pointer; padding: 4px 8px;
+}
+.cleaning-item .del:hover { color: var(--danger); }
