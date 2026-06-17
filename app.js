@@ -422,8 +422,6 @@ async function renderShellyPanel() {
   const todayKwh  = getShellyTodayKwh(totalWh);
   const todayCost = todayKwh  * price;
   const totalCost = totalKwh  * price;
-  const shots     = state.entries.length || 1;
-  const ctsPerShot= (totalCost / shots) * 100;
 
   el.shellyStatusBadge.textContent = isOn ? "🟢 An" : "⚫ Aus";
   el.shellyStatusBadge.style.color = isOn ? "var(--success)" : "var(--muted)";
@@ -447,11 +445,6 @@ async function renderShellyPanel() {
         <span class="shelly-stat-label">Gesamt</span>
         <span class="shelly-stat-value">${totalKwh.toFixed(2)} kWh</span>
         <span class="shelly-stat-sub">${totalCost.toFixed(2)} €</span>
-      </div>
-      <div class="shelly-stat">
-        <span class="shelly-stat-label">Pro Shot</span>
-        <span class="shelly-stat-value">${ctsPerShot.toFixed(1)} ct</span>
-        <span class="shelly-stat-sub">bei ${shots} Shots</span>
       </div>
       ${tempC !== null ? `
       <div class="shelly-stat ${tempC > 60 ? "is-warm" : ""}">
