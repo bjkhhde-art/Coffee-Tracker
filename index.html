@@ -464,6 +464,51 @@
         </div>
         <p id="shellySettingsMessage" class="message"></p>
       </article>
+
+      <!-- 🧽 Reinigungsprotokoll -->
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>🧽 Reinigung</h2>
+            <p>Wann wurde was zuletzt gereinigt?</p>
+          </div>
+          <span id="cleaningCount" class="badge">0 Einträge</span>
+        </div>
+
+        <form id="cleaningForm" novalidate>
+          <div class="form-grid">
+            <label>
+              Gerät
+              <select id="cleaningEquipment">
+                <option value="">Bitte wählen …</option>
+              </select>
+            </label>
+            <label>
+              Art der Reinigung
+              <select id="cleaningType">
+                <option value="klein">🧴 Kleine Reinigung (Spülen, Wischen)</option>
+                <option value="gross">🧽 Große Reinigung (Backflush, Entkalken, Zerlegen)</option>
+              </select>
+            </label>
+            <label>
+              Datum
+              <input id="cleaningDate" type="date" />
+            </label>
+            <label class="full">
+              Notiz (optional)
+              <textarea id="cleaningNotes" rows="2" placeholder="z. B. Cafiza Backflush, neue Dichtung ..."></textarea>
+            </label>
+          </div>
+          <p id="cleaningMessage" class="message"></p>
+          <div class="actions">
+            <button id="saveCleaningBtn" class="primary" type="submit">Reinigung speichern</button>
+            <button id="resetCleaningBtn" class="ghost" type="button">Formular leeren</button>
+          </div>
+        </form>
+
+        <div id="cleaningStatus" class="cleaning-status"></div>
+        <div id="cleaningList"   class="cleaning-list"></div>
+      </article>
     </section>
   </main>
 
