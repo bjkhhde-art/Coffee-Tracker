@@ -380,13 +380,7 @@ async function fetchShellyStatus() {
 
 async function renderShellyPanel() {
   if (!el.shellyContent) return;
-  const { ip, price } = state.shelly;
-
-  if (!ip) {
-    el.shellyContent.innerHTML  = `<div class="empty">Shelly IP unter Mehr → Einstellungen eintragen.</div>`;
-    el.shellyStatusBadge.textContent = "–";
-    return;
-  }
+  const { price } = state.shelly;
 
   /* keep existing content while refreshing (no flicker) */
   if (!el.shellyContent.querySelector(".shelly-stats")) {
