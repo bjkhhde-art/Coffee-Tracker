@@ -751,9 +751,9 @@ function buildRecommendationFromGroup(group) {
   const grinds    = baseShots.map(e => Number(e.mahlgrad)).filter(Number.isFinite).sort((a,b) => a-b);
   const avg = arr => arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : null;
   const confidence = group.length >= 6 ? "stabil" : group.length >= 3 ? "vorläufig" : "erster Richtwert";
-  cleaning_info: buildCleaningInfo(best.grinder_id),
   return {
     coffee_name:  best.drink_name,
+    cleaning_info: buildCleaningInfo(best.grinder_id),
     grinder_id:   best.grinder_id || null,
     grinder_name: equipmentName(best.grinder_id),
     best_grind:   Number(best.mahlgrad),
