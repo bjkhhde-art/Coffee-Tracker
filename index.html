@@ -433,25 +433,17 @@
         <p id="settingsMessage" class="message"></p>
       </article>
 
-      <!-- Shelly Einstellungen -->
+   <!-- Shelly Einstellungen -->
       <article class="panel">
         <div class="panel-head">
           <div>
-            <h2>⚡ Shelly Steckdose</h2>
-            <p>Energieverbrauch der Kaffeemaschine tracken.</p>
+            <h2>⚡ Strompreis</h2>
+            <p>Für die Kostenberechnung der Kaffeemaschine.</p>
           </div>
-          <span class="badge">Lokal</span>
-        </div>
-
-        <div class="shelly-setup-hint">
-          <p>⚠️ <strong>Einmaliger Setup:</strong> Öffne <span id="shellyHintUrl">https://&lt;IP&gt;/</span> einmal im Browser und akzeptiere die Sicherheitswarnung (selbst-signiertes Zertifikat). Danach funktioniert die Verbindung automatisch.</p>
+          <span class="badge">Shelly</span>
         </div>
 
         <div class="form-grid">
-          <label class="full">
-            IP-Adresse der Shelly
-            <input id="shellyIp" type="text" inputmode="url" placeholder="z. B. 192.168.1.42" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
-          </label>
           <label class="full">
             Strompreis in €/kWh
             <input id="shellyPrice" type="number" inputmode="decimal" step="0.01" placeholder="0.35" />
@@ -459,8 +451,7 @@
         </div>
 
         <div class="actions">
-          <button id="saveShellyBtn" class="primary" type="button">Shelly speichern</button>
-          <button id="testShellyBtn" class="secondary" type="button">Verbindung testen</button>
+          <button id="saveShellyBtn" class="primary" type="button">Speichern</button>
         </div>
         <p id="shellySettingsMessage" class="message"></p>
       </article>
