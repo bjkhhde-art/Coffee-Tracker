@@ -110,12 +110,9 @@ const el = {
   shellySubline:     $("shellySubline"),
   shellyUpdateTime:  $("shellyUpdateTime"),
 
-  shellyIp:              $("shellyIp"),
   shellyPrice:           $("shellyPrice"),
   saveShellyBtn:         $("saveShellyBtn"),
-  testShellyBtn:         $("testShellyBtn"),
   shellySettingsMessage: $("shellySettingsMessage"),
-  shellyHintUrl:         $("shellyHintUrl"),
 
   equipmentForm:          $("equipmentForm"),
   equipmentCategory:      $("equipmentCategory"),
@@ -319,12 +316,6 @@ function saveShellySettings() {
   if ($("view-dashboard").classList.contains("active")) renderShellyPanel();
 }
 
-function updateShellyHint() {
-  if (el.shellyHintUrl) {
-    el.shellyHintUrl.textContent = `https://${state.shelly.ip || "<IP>"}/`;
-  }
-}
-
 /* Daily energy baseline ----------------------------------------
    aenergy.total is cumulative Wh since last factory reset.
    We store today's starting value in localStorage to derive
@@ -453,29 +444,11 @@ async function renderShellyPanel() {
 
 function startShellyPolling() {
   stopShellyPolling();
-  if (state.shelly.ip) shellyPollTimer = setInterval(renderShellyPanel, 30000);
+  shellyPollTimer = setInterval(renderShellyPanel, 30000);
 }
 
 function stopShellyPolling() {
   if (shellyPollTimer) { clearInterval(shellyPollTimer); shellyPollTimer = null; }
-}
-
-async function testShellyConnection() {
-  setButtonLoading(el.testShellyBtn, true, "Teste …", "Verbindung testen");
-  const { data, error } = await supabaseClient
-    .from(TABLE_SHELLY_LOGS)
-    .select("recorded_at, apower_w, output")
-    .order("recorded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  setButtonLoading(el.testShellyBtn, false, "Teste …", "Verbindung testen");
-
-  if (error || !data) {
-    setShellySettingsMessage("❌ Keine Daten in der DB. Läuft das Shelly-Skript?", "error");
-    return;
-  }
-  const ageSec = Math.floor((Date.now() - new Date(data.recorded_at).getTime()) / 1000);
-  setShellySettingsMessage(`✅ Letzter Push vor ${ageSec}s · ${data.output ? "An" : "Aus"} · ${Number(data.apower_w).toFixed(0)} W`);
 }
 
 
