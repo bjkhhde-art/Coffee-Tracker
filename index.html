@@ -80,30 +80,6 @@
             </label>
 
             <label>
-              Maschine
-              <select id="machineSelect">
-                <option value="">Keine Maschine gewählt</option>
-              </select>
-            </label>
-
-            <label>
-              Mühle
-              <select id="grinderSelect">
-                <option value="">Keine Mühle gewählt</option>
-              </select>
-            </label>
-
-            <label>
-              Datum
-              <input id="entryDate" type="date" />
-            </label>
-
-            <label>
-              Uhrzeit
-              <input id="entryTime" type="time" />
-            </label>
-
-            <label>
               Dosis in g
               <input id="doseG" type="number" inputmode="decimal" step="0.1" min="0" placeholder="18" />
             </label>
@@ -118,32 +94,61 @@
               <input id="mahlgrad" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 13.5" />
               <small id="mahlgradError" class="field-error"></small>
             </label>
-
-            <label>
-              Extraktionszeit in s
-              <input id="extractionTime" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 27" />
-            </label>
-
-            <label>
-              Druck in Bar
-              <input id="pressureBar" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 9" />
-            </label>
-
-            <label>
-              Temperatur in °C
-              <input id="temperatureC" type="number" inputmode="decimal" step="0.1" placeholder="optional" />
-            </label>
-
-            <label>
-              Koffein in mg
-              <input id="caffeineMg" type="number" inputmode="decimal" step="1" min="0" placeholder="80" />
-            </label>
-
-            <label class="full">
-              Geschmack / Notiz
-              <textarea id="note" rows="3" placeholder="z. B. gute Crema, etwas sauer, sehr rund ..."></textarea>
-            </label>
           </div>
+
+          <details class="more-fields">
+            <summary>Weitere Details</summary>
+            <div class="form-grid">
+              <label>
+                Maschine
+                <select id="machineSelect">
+                  <option value="">Keine Maschine gewählt</option>
+                </select>
+              </label>
+
+              <label>
+                Mühle
+                <select id="grinderSelect">
+                  <option value="">Keine Mühle gewählt</option>
+                </select>
+              </label>
+
+              <label>
+                Datum
+                <input id="entryDate" type="date" />
+              </label>
+
+              <label>
+                Uhrzeit
+                <input id="entryTime" type="time" />
+              </label>
+
+              <label>
+                Extraktionszeit in s
+                <input id="extractionTime" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 27" />
+              </label>
+
+              <label>
+                Druck in Bar
+                <input id="pressureBar" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 9" />
+              </label>
+
+              <label>
+                Temperatur in °C
+                <input id="temperatureC" type="number" inputmode="decimal" step="0.1" placeholder="optional" />
+              </label>
+
+              <label>
+                Koffein in mg
+                <input id="caffeineMg" type="number" inputmode="decimal" step="1" min="0" placeholder="80" />
+              </label>
+
+              <label class="full">
+                Geschmack / Notiz
+                <textarea id="note" rows="3" placeholder="z. B. gute Crema, etwas sauer, sehr rund ..."></textarea>
+              </label>
+            </div>
+          </details>
 
           <p id="formError" class="form-error"></p>
           <p id="formMessage" class="message"></p>
@@ -341,35 +346,41 @@
               Name
               <input id="equipmentName" type="text" placeholder="z. B. Lelit Mara X" />
             </label>
-            <label>
-              Hersteller
-              <input id="equipmentBrand" type="text" placeholder="z. B. Lelit" />
-            </label>
-            <label>
-              Modell
-              <input id="equipmentModel" type="text" placeholder="z. B. PL62X" />
-            </label>
-            <label>
-              Kaufdatum
-              <input id="equipmentPurchaseDate" type="date" />
-            </label>
-            <label>
-              Preis in €
-              <input id="equipmentPrice" type="number" inputmode="decimal" step="0.01" placeholder="z. B. 999" />
-            </label>
-            <label class="full">
-              Fakten / technische Daten
-              <textarea id="equipmentFacts" rows="3" placeholder="z. B. E61, 58mm, PID, Scheibendurchmesser ..."></textarea>
-            </label>
-            <label class="full">
-              Notizen
-              <textarea id="equipmentNotes" rows="3" placeholder="z. B. Wartung, Umbauten, Dichtungen ..."></textarea>
-            </label>
             <label class="checkbox-label full">
               <input id="equipmentActive" type="checkbox" checked />
               Aktiv / aktuell in Benutzung
             </label>
           </div>
+
+          <details class="more-fields">
+            <summary>Weitere Details</summary>
+            <div class="form-grid">
+              <label>
+                Hersteller
+                <input id="equipmentBrand" type="text" placeholder="z. B. Lelit" />
+              </label>
+              <label>
+                Modell
+                <input id="equipmentModel" type="text" placeholder="z. B. PL62X" />
+              </label>
+              <label>
+                Kaufdatum
+                <input id="equipmentPurchaseDate" type="date" />
+              </label>
+              <label>
+                Preis in €
+                <input id="equipmentPrice" type="number" inputmode="decimal" step="0.01" placeholder="z. B. 999" />
+              </label>
+              <label class="full">
+                Fakten / technische Daten
+                <textarea id="equipmentFacts" rows="3" placeholder="z. B. E61, 58mm, PID, Scheibendurchmesser ..."></textarea>
+              </label>
+              <label class="full">
+                Notizen
+                <textarea id="equipmentNotes" rows="3" placeholder="z. B. Wartung, Umbauten, Dichtungen ..."></textarea>
+              </label>
+            </div>
+          </details>
 
           <p id="equipmentMessage" class="message"></p>
 

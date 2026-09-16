@@ -811,13 +811,7 @@ function renderRecommendations() {
         <div><h3>${escapeHTML(rec.coffee_name)}</h3><p>${escapeHTML(rec.grinder_name)} · ${rec.shots_count} Shots · ${rec.confidence}</p></div>
         <div class="grind-badge"><span>MG</span><strong>${range}</strong></div>
       </div>
-      <div class="entry-meta recommendation-meta">
-        <span>⭐ Ø ${formatNumber(rec.avg_rating, 1)}/5</span>
-        <span>⏱️ Ø ${formatNumber(rec.avg_time, 1)}s</span>
-        <span>🧭 Ø ${formatNumber(rec.avg_pressure, 1)} Bar</span>
-        <span>🎯 ${rec.hit_count}/${rec.shots_count}</span>
-        <span>Score ${rec.score}</span>
-      </div>
+      <p class="entry-line muted">⭐ Ø ${formatNumber(rec.avg_rating, 1)}/5 · ⏱️ Ø ${formatNumber(rec.avg_time, 1)}s · 🧭 Ø ${formatNumber(rec.avg_pressure, 1)} bar · 🎯 ${rec.hit_count}/${rec.shots_count} · Score ${rec.score}</p>
       <p>${escapeHTML(rec.hint)}</p>
       ${rec.cleaning_info ? `<p class="cleaning-info-note">${escapeHTML(rec.cleaning_info)}</p>` : ""}
       <div class="actions compact-actions">
@@ -1022,23 +1016,18 @@ function renderEntries() {
           <div class="entry-content">
             <div class="entry-title-row"><strong>${escapeHTML(entry.drink_name)}</strong><span>${escapeHTML(formatEntryTime(entry.entry_time))}</span></div>
             <div class="entry-meta">
-              <span>⚙️ MG ${formatNumber(entry.mahlgrad, 1)}</span>
-              <span>⏱️ ${formatNumber(entry.extraction_time_s, 1)}s</span>
-              <span>🧭 ${formatNumber(entry.pressure_bar, 1)} Bar</span>
-              <span>⚖️ ${formatNumber(entry.dose_g, 1)}→${formatNumber(entry.yield_g, 1)}g</span>
-              <span>⭐ ${entry.rating || "–"}/5</span>
+              <span>MG ${formatNumber(entry.mahlgrad, 1)}</span>
+              <span>${formatNumber(entry.extraction_time_s, 1)}s · ${formatNumber(entry.pressure_bar, 1)} bar</span>
+              <span>⭐ ${entry.rating || "–"}</span>
             </div>
-            <div class="entry-meta secondary-meta">
-              <span>${escapeHTML(equipmentName(entry.grinder_id))}</span>
-              <span>${escapeHTML(entry.drink_type || "Espresso")}</span>
-              <span>Score ${score}</span>
-              ${entry.grinder_id && !isShotAfterLastBigCleaning(entry)
-                ? `<span class="cleaning-flag-old">vor letzter Reinigung</span>`
+            <p class="entry-line muted">${formatNumber(entry.dose_g, 1)}→${formatNumber(entry.yield_g, 1)}g · ${escapeHTML(equipmentName(entry.grinder_id))} · ${escapeHTML(entry.drink_type || "Espresso")} · Score ${score}${
+              entry.grinder_id && !isShotAfterLastBigCleaning(entry)
+                ? ` · <span class="cleaning-flag-old">vor letzter Reinigung</span>`
                 : entry.grinder_cleaning_id
-                  ? `<span class="cleaning-flag-fresh">🧽 nach Reinigung</span>`
-                  : ""}
-            </div>
-            ${entry.note ? `<p>${escapeHTML(entry.note)}</p>` : ""}
+                  ? ` · <span class="cleaning-flag-fresh">🧽 nach Reinigung</span>`
+                  : ""
+            }</p>
+            ${entry.note ? `<p class="entry-note">${escapeHTML(entry.note)}</p>` : ""}
           </div>
         </div>
         <button class="delete-entry" type="button" aria-label="Shot löschen">×</button>`;
@@ -1288,12 +1277,7 @@ function renderEquipment() {
           <div class="equipment-icon">${escapeHTML(getEquipmentIcon(item.category))}</div>
           <div class="equipment-content">
             <div class="equipment-title-row"><strong>${escapeHTML(item.name)}</strong><span>${item.is_active ? "Aktiv" : "Inaktiv"}</span></div>
-            <div class="entry-meta">
-              ${item.brand         ? `<span>${escapeHTML(item.brand)}</span>` : ""}
-              ${item.model         ? `<span>${escapeHTML(item.model)}</span>` : ""}
-              ${item.purchase_date ? `<span>Gekauft: ${formatDateShort(item.purchase_date)}</span>` : ""}
-              ${item.price_eur != null ? `<span>${formatNumber(item.price_eur, 2)} €</span>` : ""}
-            </div>
+            <p class="entry-line muted">${[item.brand, item.model, item.purchase_date ? `Gekauft: ${formatDateShort(item.purchase_date)}` : "", item.price_eur != null ? `${formatNumber(item.price_eur, 2)} €` : ""].filter(Boolean).map(escapeHTML).join(" · ")}</p>
             ${item.facts ? `<p><strong>Fakten:</strong> ${escapeHTML(item.facts)}</p>` : ""}
             ${item.notes ? `<p><strong>Notiz:</strong>  ${escapeHTML(item.notes)}</p>`  : ""}
           </div>
