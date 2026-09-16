@@ -3,8 +3,8 @@
    GitHub Pages + Supabase + Shelly Plug S Gen 3
    ============================================================ */
 
-const SUPABASE_URL     = "https://lrzgcqoqcwicpuuuhaoj.supabase.co";
-const SUPABASE_ANON_KEY= "sb_publishable_uunR3UQ9rttiK8dG85IedQ__Tn1duVK";
+const SUPABASE_URL     = "https://befguyryszybbmkycaco.supabase.co";
+const SUPABASE_ANON_KEY= "sb_publishable_u-yi1kW04_JC3Emlt5KCsw_1zTedbXO";
 const TABLE_ENTRIES    = "coffee_entries";
 const TABLE_EQUIPMENT  = "coffee_equipment";
 const TABLE_SETTINGS   = "coffee_user_settings";

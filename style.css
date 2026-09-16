@@ -735,6 +735,13 @@ label {
   touch-action: pan-y;
 }
 
+/* Reserve space so the absolutely-positioned delete button (top-right)
+   never overlaps the time/status badge in the title row. */
+.entry-card,
+.equipment-card {
+  padding-right: 44px;
+}
+
 .recommendation-card { cursor: default; }
 
 .entry-card:active,
