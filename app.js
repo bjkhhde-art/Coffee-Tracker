@@ -51,6 +51,7 @@ const state = {
   shelly: { price: 0.35, baseline: null },
   usedExtractions: new Set(),
   shownExtraction: null,
+  shownFeedback: null,
   extractionErrors: 0,
   lastLoadedAt: 0,
 };
@@ -73,6 +74,7 @@ const el = {
   recommendationTitle: $("recommendationTitle"),
   recommendationText: $("recommendationText"),
   applyRecommendationBtn: $("applyRecommendationBtn"),
+  baristaBox: $("baristaBox"),
   entryForm: $("entryForm"),
   entryDetails: $("entryDetails"),
   coffeeName: $("coffeeName"),
@@ -459,6 +461,11 @@ function bindEvents() {
     if (!btn || !state.shownExtraction) return;
     if (btn.dataset.ex === "apply") applyExtraction(state.shownExtraction);
     else dismissExtraction(state.shownExtraction);
+  });
+
+  el.baristaBox.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-bf]");
+    if (btn && state.shownFeedback) applyBaristaFeedback(state.shownFeedback);
   });
 
   el.quickCoffeeButtons.addEventListener("click", (e) => {
@@ -1012,6 +1019,11 @@ function grindRangeText(rec) {
 }
 
 function updateCurrentRecommendation() {
+  updateRecommendationBox();
+  renderBaristaBox();
+}
+
+function updateRecommendationBox() {
   const rec = findRecommendation(el.coffeeName.value.trim(), el.grinderSelect.value);
   if (!el.coffeeName.value.trim()) { el.recommendationBox.classList.add("hidden"); return; }
 
@@ -1079,6 +1091,7 @@ function renderRecommendations() {
       </div>
       <p class="hint">${escapeHTML(rec.hint)}</p>
       ${rec.cleaning_info ? `<p class="info-note ${rec.stale ? "warn" : ""}">${escapeHTML(rec.cleaning_info)}</p>` : ""}
+      ${renderRecFeedback(rec)}
       <button class="primary" type="button" data-rec="${i}">Für neuen Shot nutzen</button>
     </article>`).join("");
 
@@ -1102,6 +1115,183 @@ function confidenceClass(c) {
   if (c === "stabil") return "good";
   if (c === "vorläufig") return "mid";
   return "bad";
+}
+
+
+/* ============================================================
+   Barista-Feedback (wird täglich von einem Agenten in
+   coffee_entries.barista_feedback geschrieben)
+   ============================================================ */
+
+const FEEDBACK_LABELS = ["Diagnose", "Nächster Schritt", "Erwartung", "Hinweis"];
+
+/* „Diagnose: … Nächster Schritt: … Erwartung: … Hinweis: …" → Abschnitte */
+function parseFeedback(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  const re = new RegExp(`(${FEEDBACK_LABELS.join("|")})\\s*:`, "g");
+  const marks = [];
+  let m;
+  while ((m = re.exec(raw))) marks.push({ label: m[1], start: m.index, end: re.lastIndex });
+  if (!marks.length) return [{ label: null, text: raw }];
+
+  const parts = [];
+  const intro = raw.slice(0, marks[0].start).trim();
+  if (intro) parts.push({ label: null, text: intro });
+  marks.forEach((mk, i) => {
+    const t = raw.slice(mk.end, i + 1 < marks.length ? marks[i + 1].start : undefined).trim();
+    if (t) parts.push({ label: mk.label, text: t });
+  });
+  return parts;
+}
+
+function feedbackPart(parts, label) {
+  const p = parts.find((x) => x.label === label);
+  return p ? p.text : null;
+}
+
+/* Konkrete Werte aus „Nächster Schritt" ziehen – bewusst vorsichtig */
+function extractFeedbackAction(entry, parts) {
+  const step = feedbackPart(parts, "Nächster Schritt") || "";
+  const expect = feedbackPart(parts, "Erwartung") || "";
+  const num = (v) => toNumber(v);
+  const action = { mahlgrad: null, dose: null, yield: null, timeMin: null, timeMax: null };
+
+  const grind = step.match(/Mahlgrad\s+(\d+(?:[.,]\d+)?)/i)
+             || step.match(/(?:gröber|feiner)[^.]*?\((\d+(?:[.,]\d+)?)\)/i);
+  if (grind) action.mahlgrad = num(grind[1]);
+  else if (/beibehalten|lassen|unverändert/i.test(step) && toNumber(entry.mahlgrad) !== null) action.mahlgrad = Number(entry.mahlgrad);
+
+  const ratio = step.match(/(\d+(?:[.,]\d+)?)\s*g\s*(?:→|->)\s*(\d+(?:[.,]\d+)?)\s*g/);
+  if (ratio) { action.dose = num(ratio[1]); action.yield = num(ratio[2]); }
+  const out = step.match(/(?:Ertrag|Output|Ausbeute)[^.\d]{0,20}(\d+(?:[.,]\d+)?)\s*g/i);
+  if (out) action.yield = num(out[1]);
+  const dose = step.match(/(?:Dosis)[^.\d]{0,20}(\d+(?:[.,]\d+)?)\s*g/i);
+  if (dose) action.dose = num(dose[1]);
+
+  const timeRe = /(\d+(?:[.,]\d+)?)\s*[–-]\s*(\d+(?:[.,]\d+)?)\s*s\b/;
+  const time = expect.match(timeRe) || step.match(timeRe);
+  if (time) { action.timeMin = num(time[1]); action.timeMax = num(time[2]); }
+
+  action.hasValues = action.mahlgrad !== null || action.dose !== null || action.yield !== null;
+  return action;
+}
+
+/* Neuestes Feedback zu einem Kaffee (gleiche Brühmethode bevorzugt) */
+function getFeedbackFor(coffeeName, method) {
+  const withFb = state.entries.filter((e) => e.barista_feedback && String(e.barista_feedback).trim());
+  if (!coffeeName) return withFb[0] || null;
+  const nc = normalize(coffeeName);
+  const same = withFb.filter((e) => normalize(e.drink_name) === nc);
+  const mg = methodGroup(method);
+  return same.find((e) => methodGroup(e.drink_type) === mg) || same[0] || null;
+}
+
+function newerShotsWithoutFeedback(entry) {
+  const nc = normalize(entry.drink_name);
+  const ref = entryMoment(entry);
+  return state.entries.filter((e) =>
+    normalize(e.drink_name) === nc && entryMoment(e) > ref && !(e.barista_feedback || "").trim()).length;
+}
+
+function feedbackChips(action) {
+  const chips = [];
+  if (action.mahlgrad !== null) chips.push(`Mahlgrad ${formatNumber(action.mahlgrad, 1)}`);
+  if (action.dose !== null && action.yield !== null) chips.push(`${formatNumber(action.dose, 1)} → ${formatNumber(action.yield, 1)} g`);
+  else if (action.yield !== null) chips.push(`Output ${formatNumber(action.yield, 1)} g`);
+  if (action.timeMin !== null) chips.push(`Ziel ${formatNumber(action.timeMin, 1)}–${formatNumber(action.timeMax, 1)} s`);
+  return chips.length ? `<div class="meta">${chips.map((c) => `<span class="strong">${escapeHTML(c)}</span>`).join("")}</div>` : "";
+}
+
+function feedbackDetailsHTML(parts, skipLabel) {
+  return parts
+    .filter((p) => p.label !== skipLabel)
+    .map((p) => `<p class="fb-part">${p.label ? `<b>${escapeHTML(p.label)}:</b> ` : ""}${escapeHTML(p.text)}</p>`)
+    .join("");
+}
+
+function renderBaristaBox() {
+  const editing = state.editingId ? state.entries.find((e) => e.id === state.editingId) : null;
+  const coffee = el.coffeeName.value.trim();
+  const entry = editing
+    ? (editing.barista_feedback ? editing : null)
+    : getFeedbackFor(coffee, el.brewMethod.value);
+
+  if (!entry) {
+    state.shownFeedback = null;
+    el.baristaBox.classList.add("hidden");
+    el.baristaBox.innerHTML = "";
+    return;
+  }
+
+  const parts = parseFeedback(entry.barista_feedback);
+  const step = feedbackPart(parts, "Nächster Schritt");
+  const action = extractFeedbackAction(entry, parts);
+  const newer = editing ? 0 : newerShotsWithoutFeedback(entry);
+  const dayText = entry.entry_date === todayISO() ? "von heute"
+    : daysSince(entry.entry_date) === 1 ? "von gestern"
+    : `vom ${new Date(`${entry.entry_date}T00:00:00`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
+  const when = `${dayText}${entry.entry_time ? `, ${formatEntryTime(entry.entry_time)} Uhr` : ""}`;
+
+  const title = editing
+    ? "Barista-Feedback zu diesem Shot"
+    : coffee ? "Barista-Tipp für den nächsten Shot" : `Neuester Barista-Tipp: ${entry.drink_name}`;
+
+  state.shownFeedback = editing ? null : { entry, action };
+
+  el.baristaBox.innerHTML = `
+    <div class="barista-head">
+      <strong>🧑‍🍳 ${escapeHTML(title)}</strong>
+      <small>zum Shot ${escapeHTML(when)}${newer ? `, seitdem ${newer} ${newer === 1 ? "Shot" : "Shots"} ohne Feedback` : ""}</small>
+    </div>
+    <p class="barista-step">${escapeHTML(step || parts[0]?.text || "")}</p>
+    ${feedbackChips(action)}
+    ${!editing && action.hasValues ? `<button class="secondary" type="button" data-bf="apply">Vorschlag übernehmen</button>` : ""}
+    ${parts.length > 1 || !step ? `
+      <details class="barista-more">
+        <summary>Diagnose und Hinweise</summary>
+        ${feedbackDetailsHTML(parts, step ? "Nächster Schritt" : "__none__")}
+      </details>` : ""}`;
+  el.baristaBox.classList.remove("hidden");
+}
+
+function applyBaristaFeedback({ entry, action }) {
+  const filled = [];
+  if (!el.coffeeName.value.trim()) {
+    el.coffeeName.value = entry.drink_name;
+    if (entry.drink_type) el.brewMethod.value = entry.drink_type;
+    if (entry.grinder_id) el.grinderSelect.value = entry.grinder_id;
+    filled.push(entry.drink_name);
+  }
+  if (action.mahlgrad !== null) { el.mahlgrad.value = action.mahlgrad; flashField(el.mahlgrad); filled.push(`Mahlgrad ${formatNumber(action.mahlgrad, 1)}`); }
+  if (action.dose !== null)     { el.doseG.value = action.dose; flashField(el.doseG); filled.push(`${formatNumber(action.dose, 1)} g Dosis`); }
+  if (action.yield !== null)    { el.yieldG.value = action.yield; flashField(el.yieldG); filled.push(`${formatNumber(action.yield, 1)} g Output`); }
+  updateRatio();
+  updateRecommendationBox();
+  renderQuickCoffeeButtons();
+  setMsg(el.formMessage, `Barista-Vorschlag übernommen: ${filled.join(", ")}.`);
+  showToast("Vorschlag übernommen");
+}
+
+function renderInlineFeedback(entry) {
+  const text = String(entry.barista_feedback || "").trim();
+  if (!text) {
+    return daysSince(entry.entry_date) <= 1 ? `<div class="meta"><span>🧑‍🍳 Feedback folgt</span></div>` : "";
+  }
+  const parts = parseFeedback(text);
+  const step = feedbackPart(parts, "Nächster Schritt");
+  return `
+    <details class="barista-inline">
+      <summary>🧑‍🍳 ${escapeHTML(step || parts[0].text)}</summary>
+      ${feedbackDetailsHTML(parts, step ? "Nächster Schritt" : "__none__")}
+    </details>`;
+}
+
+function renderRecFeedback(rec) {
+  const entry = getFeedbackFor(rec.coffee_name, rec.method);
+  if (!entry) return "";
+  const step = feedbackPart(parseFeedback(entry.barista_feedback), "Nächster Schritt") || entry.barista_feedback;
+  return `<p class="info-note barista-note"><b>🧑‍🍳 Barista (${escapeHTML(formatDateShort(entry.entry_date))}):</b> ${escapeHTML(step)}</p>`;
 }
 
 
@@ -1419,11 +1609,15 @@ function renderEntries() {
                 ${cleanFlag}
               </div>
               ${entry.note ? `<p class="item-note">${escapeHTML(entry.note)}</p>` : ""}
+              ${renderInlineFeedback(entry)}
             </div>
           </div>
         </div>`;
 
-      card.addEventListener("click", () => { if (card.dataset.swiped !== "true") startEdit(entry); });
+      card.addEventListener("click", (e) => {
+        if (e.target.closest("details")) return; // Feedback auf-/zuklappen, nicht bearbeiten
+        if (card.dataset.swiped !== "true") startEdit(entry);
+      });
       card.addEventListener("keydown", (e) => { if (e.key === "Enter") startEdit(entry); });
       enableSwipeToDelete(card, () => deleteEntry(entry.id));
       group.appendChild(card);
