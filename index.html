@@ -3,10 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#130c08" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Coffee Tracker</title>
 
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="stylesheet" href="style.css" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -14,29 +20,38 @@
 
 <body>
   <main class="app-shell">
+
+    <!-- Header -->
     <header class="app-header">
       <div class="brand">
         <img class="brand-logo" src="icon.svg" alt="" onerror="this.style.display='none'" />
         <div>
-          <p class="eyebrow">Espresso • Mahlgrad • Equipment</p>
           <h1>Coffee Tracker</h1>
-          <p class="subline">Tracke Shots und lass dir automatisch den besten Mahlgrad je Bohne berechnen.</p>
+          <p class="subline">Shots tracken, Mahlgrad finden, Maschine im Blick.</p>
         </div>
       </div>
+      <button id="refreshBtn" class="icon-btn" type="button" aria-label="Daten neu laden">↻</button>
     </header>
 
-    <section id="view-add" class="view active">
+    <!-- ========================================================
+         SHOT
+         ======================================================== -->
+    <section id="view-add" class="view active" aria-label="Shot eintragen">
       <article class="panel">
         <div class="panel-head">
           <div>
-            <h2>Shot eintragen</h2>
-            <p>Jeder Shot verbessert automatisch deine Mahlgrad-Empfehlungen.</p>
+            <h2 id="addTitle">Neuer Shot</h2>
           </div>
           <span id="editBadge" class="badge hidden">Bearbeiten</span>
         </div>
 
-        <div id="quickCoffeeButtons" class="quick-grid"></div>
+        <!-- Shelly: automatisch erkannte Extraktion -->
+        <div id="extractionSuggestion" class="extraction-suggestion hidden" aria-live="polite"></div>
 
+        <!-- Schnellauswahl Kaffee -->
+        <div id="quickCoffeeButtons" class="quick-row" aria-label="Schnellauswahl Kaffee"></div>
+
+        <!-- Mahlgrad-Empfehlung -->
         <div id="recommendationBox" class="recommendation-box hidden">
           <div>
             <strong id="recommendationTitle">Empfehlung</strong>
@@ -49,34 +64,20 @@
           <div class="form-grid">
             <label class="full">
               Kaffee / Bohne
-              <input id="coffeeName" list="coffeeSuggestions" type="text" placeholder="z. B. Pano Sipeo Espresso" autocomplete="off" />
+              <input id="coffeeName" list="coffeeSuggestions" type="text" placeholder="z. B. Pano Sipeo Espresso" autocomplete="off" enterkeyhint="next" />
               <datalist id="coffeeSuggestions"></datalist>
               <small id="coffeeError" class="field-error"></small>
             </label>
 
             <label>
-              Brühmethode
-              <select id="brewMethod">
-                <option value="Espresso">Espresso</option>
-                <option value="Doppelter Espresso">Doppelter Espresso</option>
-                <option value="V60">V60</option>
-                <option value="French Press">French Press</option>
-                <option value="Cold Brew">Cold Brew</option>
-                <option value="Kaffee">Kaffee</option>
-                <option value="Sonstiges">Sonstiges</option>
-              </select>
+              Mahlgrad
+              <input id="mahlgrad" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 13,5" />
+              <small id="mahlgradError" class="field-error"></small>
             </label>
 
             <label>
-              Bewertung
-              <select id="rating">
-                <option value="">–</option>
-                <option value="1">1 – schlecht</option>
-                <option value="2">2 – geht so</option>
-                <option value="3">3 – okay</option>
-                <option value="4">4 – gut</option>
-                <option value="5">5 – sehr gut</option>
-              </select>
+              Extraktion in s
+              <input id="extractionTime" type="number" inputmode="decimal" step="0.1" min="0" placeholder="z. B. 27" />
             </label>
 
             <label>
@@ -89,27 +90,53 @@
               <input id="yieldG" type="number" inputmode="decimal" step="0.1" min="0" placeholder="36" />
             </label>
 
-            <label>
-              Mahlgrad
-              <input id="mahlgrad" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 13.5" />
-              <small id="mahlgradError" class="field-error"></small>
-            </label>
+            <p id="ratioHint" class="ratio-hint full"></p>
+
+            <div class="full field">
+              <span class="field-label" id="ratingLabel">Bewertung <span id="ratingText" class="rating-text">keine</span></span>
+              <div id="ratingPicker" class="rating-picker" role="radiogroup" aria-labelledby="ratingLabel">
+                <button type="button" data-value="1" role="radio" aria-checked="false" aria-label="1 – schlecht">★</button>
+                <button type="button" data-value="2" role="radio" aria-checked="false" aria-label="2 – geht so">★</button>
+                <button type="button" data-value="3" role="radio" aria-checked="false" aria-label="3 – okay">★</button>
+                <button type="button" data-value="4" role="radio" aria-checked="false" aria-label="4 – gut">★</button>
+                <button type="button" data-value="5" role="radio" aria-checked="false" aria-label="5 – sehr gut">★</button>
+              </div>
+              <input id="rating" type="hidden" value="" />
+            </div>
           </div>
 
-          <details class="more-fields">
+          <details id="entryDetails" class="more-fields">
             <summary>Weitere Details</summary>
             <div class="form-grid">
               <label>
-                Maschine
-                <select id="machineSelect">
-                  <option value="">Keine Maschine gewählt</option>
+                Brühmethode
+                <select id="brewMethod">
+                  <option value="Espresso">Espresso</option>
+                  <option value="Doppelter Espresso">Doppelter Espresso</option>
+                  <option value="V60">V60</option>
+                  <option value="French Press">French Press</option>
+                  <option value="Cold Brew">Cold Brew</option>
+                  <option value="Kaffee">Kaffee</option>
+                  <option value="Sonstiges">Sonstiges</option>
                 </select>
+              </label>
+
+              <label>
+                Koffein in mg
+                <input id="caffeineMg" type="number" inputmode="decimal" step="1" min="0" placeholder="80" />
               </label>
 
               <label>
                 Mühle
                 <select id="grinderSelect">
-                  <option value="">Keine Mühle gewählt</option>
+                  <option value="">Keine Mühle</option>
+                </select>
+              </label>
+
+              <label>
+                Maschine
+                <select id="machineSelect">
+                  <option value="">Keine Maschine</option>
                 </select>
               </label>
 
@@ -124,12 +151,7 @@
               </label>
 
               <label>
-                Extraktionszeit in s
-                <input id="extractionTime" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 27" />
-              </label>
-
-              <label>
-                Druck in Bar
+                Druck in bar
                 <input id="pressureBar" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 9" />
               </label>
 
@@ -138,14 +160,9 @@
                 <input id="temperatureC" type="number" inputmode="decimal" step="0.1" placeholder="optional" />
               </label>
 
-              <label>
-                Koffein in mg
-                <input id="caffeineMg" type="number" inputmode="decimal" step="1" min="0" placeholder="80" />
-              </label>
-
               <label class="full">
                 Geschmack / Notiz
-                <textarea id="note" rows="3" placeholder="z. B. gute Crema, etwas sauer, sehr rund ..."></textarea>
+                <textarea id="note" rows="3" placeholder="z. B. gute Crema, etwas sauer, sehr rund …"></textarea>
               </label>
             </div>
           </details>
@@ -153,97 +170,107 @@
           <p id="formError" class="form-error"></p>
           <p id="formMessage" class="message"></p>
 
-          <div class="actions">
-            <button id="saveEntryBtn" class="primary" type="submit">Shot speichern ☕</button>
-            <button id="duplicateLastBtn" class="secondary" type="button">Letzten Shot duplizieren</button>
-            <button id="cancelEditBtn" class="ghost hidden" type="button">Bearbeiten abbrechen</button>
-            <button id="resetFormBtn" class="ghost" type="button">Formular leeren</button>
+          <div class="save-bar">
+            <button id="saveEntryBtn" class="primary" type="submit">Shot speichern</button>
+          </div>
+          <div class="form-secondary">
+            <button id="duplicateLastBtn" class="ghost" type="button">Wie letzter Shot</button>
+            <button id="resetFormBtn" class="ghost" type="button">Leeren</button>
+            <button id="cancelEditBtn" class="ghost hidden" type="button">Abbrechen</button>
+            <button id="deleteEntryBtn" class="danger hidden" type="button">Löschen</button>
           </div>
         </form>
       </article>
     </section>
 
-    <section id="view-recommendations" class="view">
+    <!-- ========================================================
+         TIPPS
+         ======================================================== -->
+    <section id="view-recommendations" class="view" aria-label="Mahlgrad-Empfehlungen">
       <article class="panel">
         <div class="panel-head">
           <div>
             <h2>Mahlgrad-Empfehlungen</h2>
-            <p>Berechnet aus deinen gespeicherten Shots je Kaffee und Mühle.</p>
+            <p>Je Kaffee und Mühle, berechnet aus deinen Shots.</p>
           </div>
-          <span id="recommendationsCount" class="badge">0 Empfehlungen</span>
+          <span id="recommendationsCount" class="badge">0</span>
         </div>
-        <div id="recommendationsList" class="recommendations-list"></div>
+        <div id="recommendationsList" class="stack"></div>
       </article>
     </section>
 
-    <section id="view-history" class="view">
+    <!-- ========================================================
+         VERLAUF
+         ======================================================== -->
+    <section id="view-history" class="view" aria-label="Verlauf">
       <article class="panel">
         <div class="panel-head">
           <div>
             <h2>Verlauf</h2>
-            <p>Neueste Shots zuerst. Rechts wischen = bearbeiten, links = löschen.</p>
+            <p>Tippen zum Bearbeiten, nach links wischen zum Löschen.</p>
           </div>
           <span id="entriesCount" class="badge">0 Shots</span>
         </div>
 
         <div class="filter-grid">
           <label>
-            Datum filtern
+            Datum
             <input id="filterDate" type="date" />
           </label>
           <label>
-            Kaffee filtern
+            Kaffee
             <select id="filterCoffee">
               <option value="">Alle Kaffees</option>
             </select>
           </label>
-          <button id="clearFiltersBtn" class="secondary" type="button">Filter leeren</button>
-          <button id="deleteAllBtn" class="danger" type="button">Alle Shots löschen</button>
+          <button id="clearFiltersBtn" class="ghost small full hidden" type="button">Filter zurücksetzen</button>
         </div>
 
-        <div id="entriesList" class="entries-list"></div>
+        <div id="entriesList" class="stack"></div>
+        <button id="loadMoreBtn" class="ghost load-more hidden" type="button">Ältere Shots anzeigen</button>
       </article>
     </section>
 
-    <section id="view-dashboard" class="view">
+    <!-- ========================================================
+         STATS
+         ======================================================== -->
+    <section id="view-dashboard" class="view" aria-label="Statistiken">
       <div class="cards">
         <article class="card">
           <span class="card-label">Shots heute</span>
           <strong id="todayCount">0</strong>
-          <small>gespeicherte Shots</small>
+          <small id="todayCountSub">eingetragen</small>
         </article>
         <article class="card">
           <span class="card-label">Koffein heute</span>
           <strong id="todayCaffeine">0 mg</strong>
-          <small id="limitText">Limit: 400 mg</small>
+          <small id="limitText">Limit 400 mg</small>
         </article>
         <article class="card">
-          <span class="card-label">Ø Shot-Zeit</span>
+          <span class="card-label">Ø Extraktion</span>
           <strong id="avgTime">–</strong>
-          <small>Zielbereich</small>
+          <small id="avgTimeSub">Ziel 25–30 s</small>
         </article>
         <article class="card">
-          <span class="card-label">Trefferquote</span>
+          <span class="card-label">Im Zielbereich</span>
           <strong id="hitRate">–</strong>
-          <small>Shots im Ziel</small>
+          <small>letzte 20 Shots</small>
         </article>
       </div>
 
       <p id="overLimitHint" class="limit-warning hidden"></p>
 
       <div class="stats-grid">
-
-        <!-- ⚡ Shelly Panel -->
         <article class="panel shelly-panel">
           <div class="panel-head">
             <div>
-              <h2>⚡ Kaffeemaschine</h2>
-              <p id="shellySubline">Shelly Plug S – Energieverbrauch</p>
+              <h2>Kaffeemaschine</h2>
+              <p>Shelly-Steckdose</p>
             </div>
             <span id="shellyStatusBadge" class="badge">–</span>
           </div>
           <div id="shellyContent">
-            <div class="empty">Shelly IP-Adresse in den Einstellungen eintragen.</div>
+            <div class="empty">Lade Shelly-Daten …</div>
           </div>
           <p id="shellyUpdateTime" class="shelly-update-time"></p>
         </article>
@@ -251,34 +278,33 @@
         <article class="panel">
           <div class="panel-head">
             <div>
-              <h2>Koffein / Woche</h2>
-              <p>Tagessummen mit Wochendurchschnitt</p>
+              <h2>Koffein pro Tag</h2>
+              <p>Letzte 7 Tage mit Durchschnitt</p>
             </div>
             <span id="weekCompare" class="badge">–</span>
           </div>
-          <canvas id="weekCanvas" class="chart-canvas" height="220"></canvas>
+          <canvas id="weekCanvas" class="chart-canvas" data-h="200"></canvas>
         </article>
 
         <article class="panel">
           <div class="panel-head">
             <div>
-              <h2>Extraktionszeit-Trend</h2>
-              <p>Letzte 30 Shots</p>
+              <h2>Extraktionszeit</h2>
+              <p>Letzte 30 Shots, Zielbereich hinterlegt</p>
             </div>
             <span id="trendBadge" class="badge">–</span>
           </div>
-          <canvas id="trendCanvas" class="chart-canvas" height="220"></canvas>
+          <canvas id="trendCanvas" class="chart-canvas" data-h="200"></canvas>
         </article>
 
         <article class="panel">
           <div class="panel-head">
             <div>
               <h2>Lieblingskaffees</h2>
-              <p>Ranking nach Häufigkeit</p>
+              <p>Nach Anzahl Shots</p>
             </div>
-            <span class="badge">Top</span>
           </div>
-          <div id="coffeeRanking" class="ranking-list"></div>
+          <div id="coffeeRanking" class="stack tight"></div>
         </article>
 
         <article class="panel">
@@ -287,74 +313,125 @@
               <h2>Beste Shots</h2>
               <p>Top 5 nach Score</p>
             </div>
-            <span class="badge">Score</span>
           </div>
-          <div id="topShots" class="ranking-list"></div>
+          <div id="topShots" class="stack tight"></div>
         </article>
 
         <article class="panel">
           <div class="panel-head">
             <div>
               <h2>Brühmethoden</h2>
-              <p>Verteilung nach Methode</p>
+              <p>Verteilung aller Shots</p>
             </div>
-            <span class="badge">Mix</span>
           </div>
-          <canvas id="methodCanvas" class="chart-canvas small" height="200"></canvas>
-          <div id="methodBars" class="method-bars"></div>
+          <canvas id="methodCanvas" class="chart-canvas" data-h="180"></canvas>
+          <div id="methodBars" class="stack tight"></div>
         </article>
 
         <article class="panel">
           <div class="panel-head">
             <div>
-              <h2>Peak-Zeiten</h2>
-              <p>Heatmap nach Tag und Uhrzeit</p>
+              <h2>Wann du Kaffee trinkst</h2>
+              <p>Wochentag und Uhrzeit</p>
             </div>
             <span id="peakHour" class="badge">–</span>
           </div>
-          <div id="heatmap" class="heatmap"></div>
+          <div class="heatmap-scroll">
+            <div id="heatmap" class="heatmap"></div>
+          </div>
         </article>
-
       </div>
     </section>
 
-    <section id="view-equipment" class="view">
+    <!-- ========================================================
+         GERÄTE (Reinigung + Equipment)
+         ======================================================== -->
+    <section id="view-equipment" class="view" aria-label="Geräte">
+
+      <!-- Reinigung -->
       <article class="panel">
         <div class="panel-head">
           <div>
-            <h2>Equipment</h2>
-            <p>Kaffeemaschine, Mühle und Zubehör. Empfehlungen werden nach Mühle getrennt.</p>
+            <h2>🧽 Reinigung</h2>
+            <p>Tippe auf „Klein“ oder „Groß“, um eine Reinigung von heute einzutragen.</p>
           </div>
-          <span id="equipmentCount" class="badge">0 Geräte</span>
+          <span id="cleaningCount" class="badge">0</span>
         </div>
 
-        <form id="equipmentForm" novalidate>
-          <div class="form-grid">
-            <label>
-              Kategorie
-              <select id="equipmentCategory">
-                <option value="Maschine">Maschine</option>
-                <option value="Mühle">Mühle</option>
-                <option value="Siebträger">Siebträger</option>
-                <option value="Waage">Waage</option>
-                <option value="Tamper">Tamper</option>
-                <option value="Zubehör">Zubehör</option>
-                <option value="Sonstiges">Sonstiges</option>
-              </select>
-            </label>
-            <label>
-              Name
-              <input id="equipmentName" type="text" placeholder="z. B. Lelit Mara X" />
-            </label>
-            <label class="checkbox-label full">
-              <input id="equipmentActive" type="checkbox" checked />
-              Aktiv / aktuell in Benutzung
-            </label>
-          </div>
+        <div id="cleaningStatus" class="stack tight"></div>
 
-          <details class="more-fields">
-            <summary>Weitere Details</summary>
+        <details id="cleaningFormDetails" class="more-fields">
+          <summary>Mit Datum oder Notiz eintragen</summary>
+          <form id="cleaningForm" novalidate>
             <div class="form-grid">
+              <label class="full">
+                Gerät
+                <select id="cleaningEquipment">
+                  <option value="">Bitte wählen …</option>
+                </select>
+              </label>
+              <label>
+                Art
+                <select id="cleaningType">
+                  <option value="klein">Klein (spülen, wischen)</option>
+                  <option value="gross">Groß (Backflush, zerlegen)</option>
+                </select>
+              </label>
+              <label>
+                Datum
+                <input id="cleaningDate" type="date" />
+              </label>
+              <label class="full">
+                Notiz
+                <textarea id="cleaningNotes" rows="2" placeholder="z. B. Cafiza Backflush, neue Dichtung …"></textarea>
+              </label>
+            </div>
+            <p id="cleaningMessage" class="message"></p>
+            <div class="actions">
+              <button id="saveCleaningBtn" class="primary" type="submit">Reinigung speichern</button>
+              <button id="resetCleaningBtn" class="ghost" type="button">Leeren</button>
+            </div>
+          </form>
+        </details>
+
+        <details class="more-fields">
+          <summary id="cleaningHistorySummary">Verlauf</summary>
+          <div id="cleaningList" class="stack tight"></div>
+        </details>
+      </article>
+
+      <!-- Meine Geräte -->
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Meine Geräte</h2>
+            <p>Tippen zum Bearbeiten. Empfehlungen werden je Mühle getrennt berechnet.</p>
+          </div>
+          <span id="equipmentCount" class="badge">0</span>
+        </div>
+
+        <div id="equipmentList" class="stack"></div>
+
+        <details id="equipmentFormDetails" class="more-fields">
+          <summary id="equipmentFormSummary">Gerät hinzufügen</summary>
+          <form id="equipmentForm" novalidate>
+            <div class="form-grid">
+              <label>
+                Kategorie
+                <select id="equipmentCategory">
+                  <option value="Maschine">Maschine</option>
+                  <option value="Mühle">Mühle</option>
+                  <option value="Siebträger">Siebträger</option>
+                  <option value="Waage">Waage</option>
+                  <option value="Tamper">Tamper</option>
+                  <option value="Zubehör">Zubehör</option>
+                  <option value="Sonstiges">Sonstiges</option>
+                </select>
+              </label>
+              <label>
+                Name
+                <input id="equipmentName" type="text" placeholder="z. B. Lelit Mara X" />
+              </label>
               <label>
                 Hersteller
                 <input id="equipmentBrand" type="text" placeholder="z. B. Lelit" />
@@ -373,53 +450,43 @@
               </label>
               <label class="full">
                 Fakten / technische Daten
-                <textarea id="equipmentFacts" rows="3" placeholder="z. B. E61, 58mm, PID, Scheibendurchmesser ..."></textarea>
+                <textarea id="equipmentFacts" rows="2" placeholder="z. B. E61, 58 mm, PID …"></textarea>
               </label>
               <label class="full">
                 Notizen
-                <textarea id="equipmentNotes" rows="3" placeholder="z. B. Wartung, Umbauten, Dichtungen ..."></textarea>
+                <textarea id="equipmentNotes" rows="2" placeholder="z. B. Wartung, Umbauten …"></textarea>
+              </label>
+              <label class="checkbox-label full">
+                <input id="equipmentActive" type="checkbox" checked />
+                In Benutzung
               </label>
             </div>
-          </details>
 
-          <p id="equipmentMessage" class="message"></p>
+            <p id="equipmentMessage" class="message"></p>
 
-          <div class="actions">
-            <button id="saveEquipmentBtn" class="primary" type="submit">Equipment speichern</button>
-            <button id="cancelEquipmentEditBtn" class="ghost hidden" type="button">Bearbeiten abbrechen</button>
-            <button id="resetEquipmentBtn" class="ghost" type="button">Formular leeren</button>
-          </div>
-        </form>
-      </article>
-
-      <article class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>Meine Ausstattung</h2>
-            <p>Tippe auf einen Eintrag zum Bearbeiten.</p>
-          </div>
-          <span class="badge">Setup</span>
-        </div>
-        <div id="equipmentList" class="equipment-list"></div>
+            <div class="actions">
+              <button id="saveEquipmentBtn" class="primary" type="submit">Gerät speichern</button>
+              <button id="cancelEquipmentEditBtn" class="ghost hidden" type="button">Abbrechen</button>
+              <button id="deleteEquipmentBtn" class="danger hidden" type="button">Gerät löschen</button>
+            </div>
+          </form>
+        </details>
       </article>
     </section>
 
-    <section id="view-settings" class="view">
-      <!-- Zielwerte -->
+    <!-- ========================================================
+         MEHR (Einstellungen)
+         ======================================================== -->
+    <section id="view-settings" class="view" aria-label="Einstellungen">
       <article class="panel">
         <div class="panel-head">
           <div>
-            <h2>Einstellungen</h2>
-            <p>Zielbereiche für automatische Empfehlungen.</p>
+            <h2>Zielbereiche</h2>
+            <p>Grundlage für Score, Trefferquote und Empfehlungen.</p>
           </div>
-          <span class="badge">Setup</span>
         </div>
 
         <div class="form-grid">
-          <label class="full">
-            Tageslimit Koffein in mg
-            <input id="limitInput" type="number" inputmode="decimal" step="10" min="0" placeholder="400" />
-          </label>
           <label>
             Zielzeit min. in s
             <input id="targetTimeMin" type="number" inputmode="decimal" step="0.1" placeholder="25" />
@@ -429,87 +496,54 @@
             <input id="targetTimeMax" type="number" inputmode="decimal" step="0.1" placeholder="30" />
           </label>
           <label>
-            Zieldruck min. in Bar
+            Druck min. in bar
             <input id="targetPressureMin" type="number" inputmode="decimal" step="0.1" placeholder="8" />
           </label>
           <label>
-            Zieldruck max. in Bar
+            Druck max. in bar
             <input id="targetPressureMax" type="number" inputmode="decimal" step="0.1" placeholder="10" />
+          </label>
+          <label class="full">
+            Koffein-Tageslimit in mg
+            <input id="limitInput" type="number" inputmode="decimal" step="10" min="0" placeholder="400" />
           </label>
         </div>
 
-        <div class="actions">
-          <button id="saveSettingsBtn" class="primary" type="button">Einstellungen speichern</button>
-        </div>
         <p id="settingsMessage" class="message"></p>
+        <div class="actions">
+          <button id="saveSettingsBtn" class="primary" type="button">Zielbereiche speichern</button>
+        </div>
       </article>
 
-   <!-- Shelly Einstellungen -->
       <article class="panel">
         <div class="panel-head">
           <div>
             <h2>⚡ Strompreis</h2>
-            <p>Für die Kostenberechnung der Kaffeemaschine.</p>
+            <p>Für die Kosten im Shelly-Bereich unter Stats.</p>
           </div>
-          <span class="badge">Shelly</span>
         </div>
-
         <div class="form-grid">
           <label class="full">
             Strompreis in €/kWh
-            <input id="shellyPrice" type="number" inputmode="decimal" step="0.01" placeholder="0.35" />
+            <input id="shellyPrice" type="number" inputmode="decimal" step="0.01" placeholder="0,35" />
           </label>
         </div>
-
-        <div class="actions">
-          <button id="saveShellyBtn" class="primary" type="button">Speichern</button>
-        </div>
         <p id="shellySettingsMessage" class="message"></p>
+        <div class="actions">
+          <button id="saveShellyBtn" class="primary" type="button">Strompreis speichern</button>
+        </div>
       </article>
 
-      <!-- 🧽 Reinigungsprotokoll -->
       <article class="panel">
         <div class="panel-head">
           <div>
-            <h2>🧽 Reinigung</h2>
-            <p>Wann wurde was zuletzt gereinigt?</p>
+            <h2>Daten</h2>
+            <p>Alle Daten liegen in Supabase und sind auf jedem Gerät verfügbar.</p>
           </div>
-          <span id="cleaningCount" class="badge">0 Einträge</span>
         </div>
-
-        <form id="cleaningForm" novalidate>
-          <div class="form-grid">
-            <label>
-              Gerät
-              <select id="cleaningEquipment">
-                <option value="">Bitte wählen …</option>
-              </select>
-            </label>
-            <label>
-              Art der Reinigung
-              <select id="cleaningType">
-                <option value="klein">🧴 Kleine Reinigung (Spülen, Wischen)</option>
-                <option value="gross">🧽 Große Reinigung (Backflush, Entkalken, Zerlegen)</option>
-              </select>
-            </label>
-            <label>
-              Datum
-              <input id="cleaningDate" type="date" />
-            </label>
-            <label class="full">
-              Notiz (optional)
-              <textarea id="cleaningNotes" rows="2" placeholder="z. B. Cafiza Backflush, neue Dichtung ..."></textarea>
-            </label>
-          </div>
-          <p id="cleaningMessage" class="message"></p>
-          <div class="actions">
-            <button id="saveCleaningBtn" class="primary" type="submit">Reinigung speichern</button>
-            <button id="resetCleaningBtn" class="ghost" type="button">Formular leeren</button>
-          </div>
-        </form>
-
-        <div id="cleaningStatus" class="cleaning-status"></div>
-        <div id="cleaningList"   class="cleaning-list"></div>
+        <div class="actions">
+          <button id="deleteAllBtn" class="danger" type="button">Alle Shots löschen</button>
+        </div>
       </article>
     </section>
   </main>
@@ -517,32 +551,31 @@
   <!-- Bottom Navigation -->
   <nav id="tabs" class="tabs" aria-label="Navigation">
     <button class="tab active" data-view="add" type="button">
-      <span class="tab-icon">☕</span>
+      <span class="tab-icon" aria-hidden="true">☕</span>
       <span class="tab-label">Shot</span>
     </button>
     <button class="tab" data-view="recommendations" type="button">
-      <span class="tab-icon">✨</span>
+      <span class="tab-icon" aria-hidden="true">✨</span>
       <span class="tab-label">Tipps</span>
     </button>
     <button class="tab" data-view="history" type="button">
-      <span class="tab-icon">📋</span>
+      <span class="tab-icon" aria-hidden="true">📋</span>
       <span class="tab-label">Verlauf</span>
     </button>
     <button class="tab" data-view="dashboard" type="button">
-      <span class="tab-icon">📊</span>
+      <span class="tab-icon" aria-hidden="true">📊</span>
       <span class="tab-label">Stats</span>
     </button>
     <button class="tab" data-view="equipment" type="button">
-      <span class="tab-icon">⚙️</span>
-      <span class="tab-label">Setup</span>
+      <span class="tab-icon" aria-hidden="true">⚙️</span>
+      <span class="tab-label">Geräte</span>
     </button>
     <button class="tab" data-view="settings" type="button">
-      <span class="tab-icon">🔧</span>
+      <span class="tab-icon" aria-hidden="true">🔧</span>
       <span class="tab-label">Mehr</span>
     </button>
   </nav>
 
-  <button id="fabAdd" class="fab" type="button" aria-label="Neuen Shot hinzufügen">+</button>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>

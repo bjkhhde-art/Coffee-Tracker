@@ -1,22 +1,38 @@
 /* ============================================================
-   Coffee Tracker – automatische Mahlgrad-Empfehlungen
-   GitHub Pages + Supabase + Shelly Plug S Gen 3
+   Coffee Tracker
+   Vanilla JS + Supabase + Shelly Plug S Gen 3
    ============================================================ */
 
-const SUPABASE_URL     = "https://befguyryszybbmkycaco.supabase.co";
-const SUPABASE_ANON_KEY= "sb_publishable_u-yi1kW04_JC3Emlt5KCsw_1zTedbXO";
-const TABLE_ENTRIES    = "coffee_entries";
-const TABLE_EQUIPMENT  = "coffee_equipment";
-const TABLE_SETTINGS   = "coffee_user_settings";
-const TABLE_CLEANING = "coffee_cleaning_logs";
+const SUPABASE_URL      = "https://befguyryszybbmkycaco.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_u-yi1kW04_JC3Emlt5KCsw_1zTedbXO";
+
+const TABLE_ENTRIES     = "coffee_entries";
+const TABLE_EQUIPMENT   = "coffee_equipment";
+const TABLE_SETTINGS    = "coffee_user_settings";
+const TABLE_CLEANING    = "coffee_cleaning_logs";
 const TABLE_SHELLY_LOGS = "coffee_shelly_logs";
+const TABLE_EXTRACTIONS = "coffee_shelly_extractions";
+
+/* Tuning */
+const EXTRACTION_LOOKBACK_MIN = 15;     // so lange wird eine erkannte Extraktion vorgeschlagen
+const EXTRACTION_POLL_MS      = 10000;  // Shot-Tab: alle 10 s nach neuen Extraktionen schauen
+const SHELLY_POLL_MS          = 30000;  // Stats-Tab: Shelly-Panel alle 30 s aktualisieren
+const SHELLY_STALE_MIN        = 7;      // Shelly pusht alle 5 min, danach gilt der Wert als veraltet
+const RELOAD_AFTER_MS         = 120000; // beim Zurückkehren in die App nach 2 min neu laden
+const HISTORY_PAGE            = 30;
+const STATS_WINDOW            = 20;     // Ø Extraktion & Trefferquote über die letzten N Shots
+
+const CLEANING_THRESHOLDS = {
+  klein: { ok: 3,  warn: 7  },
+  gross: { ok: 14, warn: 30 },
+};
 
 const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
 const state = {
-  isLoading: true,
+  currentView: "add",
   entries: [],
   equipment: [],
   cleaningLogs: [],
@@ -24,6 +40,7 @@ const state = {
   editingId: null,
   editingEquipmentId: null,
   filters: { date: "", coffee: "" },
+  historyLimit: HISTORY_PAGE,
   settings: {
     caffeine_limit_mg: 400,
     target_time_min_s: 25,
@@ -31,127 +48,142 @@ const state = {
     target_pressure_min_bar: 8,
     target_pressure_max_bar: 10,
   },
-  shelly: {
-    ip: "",
-    price: 0.35,
-  },
+  shelly: { price: 0.35, baseline: null },
+  usedExtractions: new Set(),
+  shownExtraction: null,
+  extractionErrors: 0,
+  lastLoadedAt: 0,
 };
 
-let shellyPollTimer = null;
+const timers = { shelly: null, extraction: null, resize: null };
+
 const $ = (id) => document.getElementById(id);
 
 const el = {
-  tabs:   $("tabs"),
-  fabAdd: $("fabAdd"),
-
-  quickCoffeeButtons:     $("quickCoffeeButtons"),
-  recommendationBox:      $("recommendationBox"),
-  recommendationTitle:    $("recommendationTitle"),
-  recommendationText:     $("recommendationText"),
-  applyRecommendationBtn: $("applyRecommendationBtn"),
-
-  entryForm:       $("entryForm"),
-  coffeeName:      $("coffeeName"),
-  coffeeSuggestions: $("coffeeSuggestions"),
-  brewMethod:      $("brewMethod"),
-  machineSelect:   $("machineSelect"),
-  grinderSelect:   $("grinderSelect"),
-  entryDate:       $("entryDate"),
-  entryTime:       $("entryTime"),
-  doseG:           $("doseG"),
-  yieldG:          $("yieldG"),
-  mahlgrad:        $("mahlgrad"),
-  extractionTime:  $("extractionTime"),
-  pressureBar:     $("pressureBar"),
-  temperatureC:    $("temperatureC"),
-  caffeineMg:      $("caffeineMg"),
-  rating:          $("rating"),
-  note:            $("note"),
-
-  coffeeError:      $("coffeeError"),
-  mahlgradError:    $("mahlgradError"),
-  formError:        $("formError"),
-  formMessage:      $("formMessage"),
-  saveEntryBtn:     $("saveEntryBtn"),
-  duplicateLastBtn: $("duplicateLastBtn"),
-  cancelEditBtn:    $("cancelEditBtn"),
-  resetFormBtn:     $("resetFormBtn"),
-  editBadge:        $("editBadge"),
-
-  recommendationsList:  $("recommendationsList"),
-  recommendationsCount: $("recommendationsCount"),
-
-  filterDate:      $("filterDate"),
-  filterCoffee:    $("filterCoffee"),
-  clearFiltersBtn: $("clearFiltersBtn"),
-  deleteAllBtn:    $("deleteAllBtn"),
-  entriesList:     $("entriesList"),
-  entriesCount:    $("entriesCount"),
-
-  todayCount:    $("todayCount"),
-  todayCaffeine: $("todayCaffeine"),
-  limitText:     $("limitText"),
-  overLimitHint: $("overLimitHint"),
-  avgTime:       $("avgTime"),
-  hitRate:       $("hitRate"),
-  weekCanvas:    $("weekCanvas"),
-  weekCompare:   $("weekCompare"),
-  trendCanvas:   $("trendCanvas"),
-  trendBadge:    $("trendBadge"),
-  coffeeRanking: $("coffeeRanking"),
-  topShots:      $("topShots"),
-  methodCanvas:  $("methodCanvas"),
-  methodBars:    $("methodBars"),
-  heatmap:       $("heatmap"),
-  peakHour:      $("peakHour"),
-
-  shellyContent:     $("shellyContent"),
-  shellyStatusBadge: $("shellyStatusBadge"),
-  shellySubline:     $("shellySubline"),
-  shellyUpdateTime:  $("shellyUpdateTime"),
-
-  shellyPrice:           $("shellyPrice"),
-  saveShellyBtn:         $("saveShellyBtn"),
-  shellySettingsMessage: $("shellySettingsMessage"),
-
-  equipmentForm:          $("equipmentForm"),
-  equipmentCategory:      $("equipmentCategory"),
-  equipmentName:          $("equipmentName"),
-  equipmentBrand:         $("equipmentBrand"),
-  equipmentModel:         $("equipmentModel"),
-  equipmentPurchaseDate:  $("equipmentPurchaseDate"),
-  equipmentPrice:         $("equipmentPrice"),
-  equipmentFacts:         $("equipmentFacts"),
-  equipmentNotes:         $("equipmentNotes"),
-  equipmentActive:        $("equipmentActive"),
-  equipmentMessage:       $("equipmentMessage"),
-  equipmentCount:         $("equipmentCount"),
-  equipmentList:          $("equipmentList"),
-  saveEquipmentBtn:       $("saveEquipmentBtn"),
-  cancelEquipmentEditBtn: $("cancelEquipmentEditBtn"),
-  resetEquipmentBtn:      $("resetEquipmentBtn"),
-
-  limitInput:        $("limitInput"),
-  targetTimeMin:     $("targetTimeMin"),
-  targetTimeMax:     $("targetTimeMax"),
-  targetPressureMin: $("targetPressureMin"),
-  targetPressureMax: $("targetPressureMax"),
-  saveSettingsBtn:   $("saveSettingsBtn"),
-  settingsMessage:   $("settingsMessage"),
-
+  tabs: $("tabs"),
+  refreshBtn: $("refreshBtn"),
   toast: $("toast"),
 
-  cleaningForm:       $("cleaningForm"),
-  cleaningEquipment:  $("cleaningEquipment"),
-  cleaningType:       $("cleaningType"),
-  cleaningDate:       $("cleaningDate"),
-  cleaningNotes:      $("cleaningNotes"),
-  cleaningMessage:    $("cleaningMessage"),
-  cleaningCount:      $("cleaningCount"),
-  cleaningStatus:     $("cleaningStatus"),
-  cleaningList:       $("cleaningList"),
-  saveCleaningBtn:    $("saveCleaningBtn"),
-  resetCleaningBtn:   $("resetCleaningBtn"),
+  /* Shot */
+  addTitle: $("addTitle"),
+  editBadge: $("editBadge"),
+  extractionSuggestion: $("extractionSuggestion"),
+  quickCoffeeButtons: $("quickCoffeeButtons"),
+  recommendationBox: $("recommendationBox"),
+  recommendationTitle: $("recommendationTitle"),
+  recommendationText: $("recommendationText"),
+  applyRecommendationBtn: $("applyRecommendationBtn"),
+  entryForm: $("entryForm"),
+  entryDetails: $("entryDetails"),
+  coffeeName: $("coffeeName"),
+  coffeeSuggestions: $("coffeeSuggestions"),
+  mahlgrad: $("mahlgrad"),
+  extractionTime: $("extractionTime"),
+  doseG: $("doseG"),
+  yieldG: $("yieldG"),
+  ratioHint: $("ratioHint"),
+  ratingPicker: $("ratingPicker"),
+  ratingText: $("ratingText"),
+  rating: $("rating"),
+  brewMethod: $("brewMethod"),
+  caffeineMg: $("caffeineMg"),
+  grinderSelect: $("grinderSelect"),
+  machineSelect: $("machineSelect"),
+  entryDate: $("entryDate"),
+  entryTime: $("entryTime"),
+  pressureBar: $("pressureBar"),
+  temperatureC: $("temperatureC"),
+  note: $("note"),
+  coffeeError: $("coffeeError"),
+  mahlgradError: $("mahlgradError"),
+  formError: $("formError"),
+  formMessage: $("formMessage"),
+  saveEntryBtn: $("saveEntryBtn"),
+  duplicateLastBtn: $("duplicateLastBtn"),
+  resetFormBtn: $("resetFormBtn"),
+  cancelEditBtn: $("cancelEditBtn"),
+  deleteEntryBtn: $("deleteEntryBtn"),
+
+  /* Tipps */
+  recommendationsList: $("recommendationsList"),
+  recommendationsCount: $("recommendationsCount"),
+
+  /* Verlauf */
+  filterDate: $("filterDate"),
+  filterCoffee: $("filterCoffee"),
+  clearFiltersBtn: $("clearFiltersBtn"),
+  entriesList: $("entriesList"),
+  entriesCount: $("entriesCount"),
+  loadMoreBtn: $("loadMoreBtn"),
+
+  /* Stats */
+  todayCount: $("todayCount"),
+  todayCountSub: $("todayCountSub"),
+  todayCaffeine: $("todayCaffeine"),
+  limitText: $("limitText"),
+  avgTime: $("avgTime"),
+  avgTimeSub: $("avgTimeSub"),
+  hitRate: $("hitRate"),
+  overLimitHint: $("overLimitHint"),
+  shellyContent: $("shellyContent"),
+  shellyStatusBadge: $("shellyStatusBadge"),
+  shellyUpdateTime: $("shellyUpdateTime"),
+  weekCanvas: $("weekCanvas"),
+  weekCompare: $("weekCompare"),
+  trendCanvas: $("trendCanvas"),
+  trendBadge: $("trendBadge"),
+  coffeeRanking: $("coffeeRanking"),
+  topShots: $("topShots"),
+  methodCanvas: $("methodCanvas"),
+  methodBars: $("methodBars"),
+  heatmap: $("heatmap"),
+  peakHour: $("peakHour"),
+
+  /* Geräte */
+  cleaningCount: $("cleaningCount"),
+  cleaningStatus: $("cleaningStatus"),
+  cleaningFormDetails: $("cleaningFormDetails"),
+  cleaningForm: $("cleaningForm"),
+  cleaningEquipment: $("cleaningEquipment"),
+  cleaningType: $("cleaningType"),
+  cleaningDate: $("cleaningDate"),
+  cleaningNotes: $("cleaningNotes"),
+  cleaningMessage: $("cleaningMessage"),
+  saveCleaningBtn: $("saveCleaningBtn"),
+  resetCleaningBtn: $("resetCleaningBtn"),
+  cleaningHistorySummary: $("cleaningHistorySummary"),
+  cleaningList: $("cleaningList"),
+  equipmentCount: $("equipmentCount"),
+  equipmentList: $("equipmentList"),
+  equipmentFormDetails: $("equipmentFormDetails"),
+  equipmentFormSummary: $("equipmentFormSummary"),
+  equipmentForm: $("equipmentForm"),
+  equipmentCategory: $("equipmentCategory"),
+  equipmentName: $("equipmentName"),
+  equipmentBrand: $("equipmentBrand"),
+  equipmentModel: $("equipmentModel"),
+  equipmentPurchaseDate: $("equipmentPurchaseDate"),
+  equipmentPrice: $("equipmentPrice"),
+  equipmentFacts: $("equipmentFacts"),
+  equipmentNotes: $("equipmentNotes"),
+  equipmentActive: $("equipmentActive"),
+  equipmentMessage: $("equipmentMessage"),
+  saveEquipmentBtn: $("saveEquipmentBtn"),
+  cancelEquipmentEditBtn: $("cancelEquipmentEditBtn"),
+  deleteEquipmentBtn: $("deleteEquipmentBtn"),
+
+  /* Mehr */
+  targetTimeMin: $("targetTimeMin"),
+  targetTimeMax: $("targetTimeMax"),
+  targetPressureMin: $("targetPressureMin"),
+  targetPressureMax: $("targetPressureMax"),
+  limitInput: $("limitInput"),
+  saveSettingsBtn: $("saveSettingsBtn"),
+  settingsMessage: $("settingsMessage"),
+  shellyPrice: $("shellyPrice"),
+  saveShellyBtn: $("saveShellyBtn"),
+  shellySettingsMessage: $("shellySettingsMessage"),
+  deleteAllBtn: $("deleteAllBtn"),
 };
 
 
@@ -159,8 +191,15 @@ const el = {
    Helper
    ============================================================ */
 
-function todayISO() { return new Date().toISOString().slice(0, 10); }
-function nowTime()  { return new Date().toTimeString().slice(0, 5); }
+const pad = (n) => String(n).padStart(2, "0");
+
+/* Lokales Datum (nicht UTC!) – sonst ist zwischen 0 und 2 Uhr der falsche Tag „heute" */
+function localISO(d = new Date()) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function todayISO() { return localISO(); }
+function nowTime(d = new Date()) { return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function startOfTodayISO() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); }
 
 function toNumber(value) {
   if (value === "" || value === null || value === undefined) return null;
@@ -170,11 +209,14 @@ function toNumber(value) {
 
 function formatNumber(value, decimals = 0) {
   const n = Number(value);
+  if (value === null || value === undefined || value === "" || !Number.isFinite(n)) return "–";
+  return n.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+}
+
+function formatFixed(value, decimals) {
+  const n = Number(value);
   if (!Number.isFinite(n)) return "–";
-  return n.toLocaleString("de-DE", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: decimals,
-  });
+  return n.toLocaleString("de-DE", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
 function normalize(value) {
@@ -195,63 +237,67 @@ function escapeHTML(value) {
     .replaceAll("'", "&#039;");
 }
 
-function formatEntryTime(time) {
-  if (!time) return "–";
-  return String(time).slice(0, 5);
-}
+function formatEntryTime(time) { return time ? String(time).slice(0, 5) : "–"; }
 
 function formatDateShort(date) {
   if (!date) return "–";
-  return new Date(`${date}T00:00:00`).toLocaleDateString("de-DE", {
-    day: "2-digit", month: "2-digit", year: "2-digit",
-  });
+  return new Date(`${date}T00:00:00`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
 function formatDateHeader(date) {
-  const d         = new Date(`${date}T00:00:00`);
-  const today     = todayISO();
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const yISO = yesterday.toISOString().slice(0, 10);
-  if (date === today) return "Heute";
-  if (date === yISO)  return "Gestern";
-  return d.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
+  if (date === todayISO()) return "Heute";
+  if (date === localISO(yesterday)) return "Gestern";
+  return new Date(`${date}T00:00:00`).toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
 }
 
-function showToast(message) {
+function relativeAge(ms) {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  if (sec < 60) return `vor ${sec} s`;
+  if (sec < 3600) return `vor ${Math.floor(sec / 60)} min`;
+  if (sec < 86400) return `vor ${Math.floor(sec / 3600)} h`;
+  return `vor ${Math.floor(sec / 86400)} T`;
+}
+
+function daysSince(dateStr) {
+  if (!dateStr) return Infinity;
+  const start = new Date(`${dateStr}T00:00:00`);
+  const today = new Date(`${todayISO()}T00:00:00`);
+  return Math.round((today - start) / 86400000);
+}
+
+function daysText(days) {
+  if (!Number.isFinite(days)) return "noch nie";
+  if (days <= 0) return "heute";
+  if (days === 1) return "gestern";
+  return `vor ${days} Tagen`;
+}
+
+function showToast(message, type = "info") {
   el.toast.textContent = message;
+  el.toast.classList.toggle("error", type === "error");
   el.toast.classList.add("show");
-  window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => el.toast.classList.remove("show"), 2600);
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => el.toast.classList.remove("show"), type === "error" ? 4000 : 2600);
 }
 
-function setMsg(elem, message, type) {
-  if (!elem) return;
-  elem.textContent   = message || "";
-  elem.style.color   = type === "error" ? "var(--danger)" : "var(--accent-light)";
+function setMsg(node, message, type) {
+  if (!node) return;
+  node.textContent = message || "";
+  node.style.color = type === "error" ? "var(--danger)" : "";
 }
-
-function setFormMessage(m, t)         { setMsg(el.formMessage,         m, t); }
-function setSettingsMessage(m, t)     { setMsg(el.settingsMessage,     m, t); }
-function setEquipmentMessage(m, t)    { setMsg(el.equipmentMessage,    m, t); }
-function setShellySettingsMessage(m, t) { setMsg(el.shellySettingsMessage, m, t); }
 
 function setButtonLoading(btn, loading, loadText, defaultText) {
-  btn.disabled    = loading;
+  btn.disabled = loading;
   btn.textContent = loading ? loadText : defaultText;
 }
 
-function getLastNDays(n) {
+function getLastNDays(n, offset = 0) {
   return Array.from({ length: n }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (n - 1 - i));
-    return d.toISOString().slice(0, 10);
-  });
-}
-
-function getPreviousNDays(n, offset) {
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (n + offset - 1 - i));
-    return d.toISOString().slice(0, 10);
+    const d = new Date();
+    d.setDate(d.getDate() - (n - 1 - i) - offset);
+    return localISO(d);
   });
 }
 
@@ -259,298 +305,226 @@ function getMethodIcon(method) {
   const t = normalize(method);
   if (t.includes("espresso")) return "☕";
   if (t.includes("v60") || t.includes("filter")) return "🔻";
-  if (t.includes("french"))   return "🫙";
-  if (t.includes("cold"))     return "🧊";
-  if (t.includes("latte") || t.includes("cappuccino")) return "🥛";
+  if (t.includes("french")) return "🫙";
+  if (t.includes("cold")) return "🧊";
   return "☕";
 }
 
-function getEquipmentIcon(cat) {
-  const t = normalize(cat);
+function getEquipmentIcon(category) {
+  const t = normalize(category);
   if (t.includes("maschine")) return "☕";
-  if (t.includes("muhle"))    return "⚙️";
-  if (t.includes("sieb"))     return "🧺";
-  if (t.includes("waage"))    return "⚖️";
-  if (t.includes("tamper"))   return "⬇️";
-  if (t.includes("zubehor"))  return "🧰";
+  if (t.includes("muhle")) return "⚙️";
+  if (t.includes("sieb")) return "🧺";
+  if (t.includes("waage")) return "⚖️";
+  if (t.includes("tamper")) return "⬇️";
+  if (t.includes("zubehor")) return "🧰";
   return "🔧";
 }
 
+const isMachine = (item) => normalize(item.category).includes("maschine");
+const isGrinder = (item) => normalize(item.category).includes("muhle");
+
 function getEquipmentById(id) {
   if (!id) return null;
-  return state.equipment.find(i => String(i.id) === String(id)) || null;
+  return state.equipment.find((i) => String(i.id) === String(id)) || null;
+}
+
+function equipmentLabel(item) {
+  return [item.brand, item.model || item.name].filter(Boolean).join(" ") || item.name || "Gerät";
 }
 
 function equipmentName(id) {
   const item = getEquipmentById(id);
-  if (!item) return "Keine Mühle";
-  return [item.brand, item.model || item.name].filter(Boolean).join(" ");
+  return item ? equipmentLabel(item) : "Keine Mühle";
 }
 
 function sumCaffeine(entries) {
   return entries.reduce((s, e) => s + (Number(e.caffeine_mg) || 0), 0);
 }
 
-
-/* ============================================================
-   Shelly – localStorage settings
-   ============================================================ */
-
-function loadShellySettings() {
-  try {
-    const raw = localStorage.getItem("ct_shelly");
-    if (raw) {
-      const s = JSON.parse(raw);
-      state.shelly.price = Number(s.price) || 0.35;
-    }
-  } catch { /* ignore */ }
-  el.shellyPrice.value = state.shelly.price;
+function entryMoment(entry) {
+  return new Date(`${entry.entry_date}T${entry.entry_time || "00:00:00"}`);
 }
 
-function saveShellySettings() {
-  const price = toNumber(el.shellyPrice.value) ?? 0.35;
-  state.shelly.price = price;
-  try { localStorage.setItem("ct_shelly", JSON.stringify({ price })); } catch { /* ignore */ }
-  setShellySettingsMessage("Strompreis gespeichert.");
-  showToast("Strompreis gespeichert ⚡");
-  if ($("view-dashboard").classList.contains("active")) renderShellyPanel();
-}
+function isViewActive(name) { return state.currentView === name; }
 
-/* Daily energy baseline ----------------------------------------
-   aenergy.total is cumulative Wh since last factory reset.
-   We store today's starting value in localStorage to derive
-   "Energie heute" = (current – baseline) / 1000 kWh.
--------------------------------------------------------------- */
-
-function getShellyTodayKwh(currentWh) {
-  const today      = todayISO();
-  const storedDate = localStorage.getItem("ct_shelly_bdate") || "";
-  const storedWh   = Number(localStorage.getItem("ct_shelly_bwh")) || 0;
-
-  if (storedDate !== today || currentWh < storedWh) {
-    localStorage.setItem("ct_shelly_bdate", today);
-    localStorage.setItem("ct_shelly_bwh",   String(currentWh));
-    return 0;
-  }
-  return (currentWh - storedWh) / 1000;
-}
-
-/* Shelly fetch ------------------------------------------------
-   Shelly Plug S Gen 3 speaks RPC over HTTPS.
-   The device uses a self-signed cert → user must accept once.
-   CORS: Shelly Gen 2/3 returns Access-Control-Allow-Origin: *
--------------------------------------------------------------- */
-
-async function fetchShellyStatus() {
-  try {
-    // Letzten Eintrag aus Supabase holen
-    const { data, error } = await supabaseClient
-      .from(TABLE_SHELLY_LOGS)
-      .select("*")
-      .order("recorded_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error || !data) return null;
-
-    // Auf das gleiche Format mappen, das renderShellyPanel erwartet
-    return {
-      output: data.output,
-      apower: Number(data.apower_w) || 0,
-      aenergy: { total: Number(data.aenergy_wh) || 0 },
-      temperature: data.temperature_c != null ? { tC: Number(data.temperature_c) } : null,
-      _recorded_at: data.recorded_at,   // für Anzeige „zuletzt aktualisiert"
-    };
-  } catch (err) {
-    console.warn("Shelly-Logs:", err);
-    return null;
-  }
-}
-
-/* Render Shelly panel ---------------------------------------- */
-
-async function renderShellyPanel() {
-  if (!el.shellyContent) return;
-  const { price } = state.shelly;
-
-  /* keep existing content while refreshing (no flicker) */
-  if (!el.shellyContent.querySelector(".shelly-stats")) {
-    el.shellyContent.innerHTML = `<div class="empty">Lade …</div>`;
-  }
-
-  const data = await fetchShellyStatus();
-
-  if (!data) {
-    el.shellyContent.innerHTML = `
-      <div class="shelly-error">
-        ⚠️ Noch keine Shelly-Daten in der Datenbank.<br><br>
-        Prüfe ob das Skript auf der Shelly läuft (Shelly-App → Skripte → Status sollte „läuft" sein).
-      </div>`;
-    el.shellyStatusBadge.textContent = "Keine Daten";
-    el.shellyUpdateTime.textContent  = "";
-    return;
-  }
-
-  const isOn      = Boolean(data.output);
-  const powerW    = Number(data.apower  ?? 0);
-  const totalWh   = Number(data.aenergy?.total ?? 0);
-  const tempC     = data.temperature?.tC ?? null;
-  const totalKwh  = totalWh / 1000;
-  const todayKwh  = getShellyTodayKwh(totalWh);
-  const todayCost = todayKwh  * price;
-  const totalCost = totalKwh  * price;
-
-  el.shellyStatusBadge.textContent = isOn ? "🟢 An" : "⚫ Aus";
-  el.shellyStatusBadge.style.color = isOn ? "var(--success)" : "var(--muted)";
-
-  el.shellyContent.innerHTML = `
-    <div class="shelly-stats">
-      <div class="shelly-stat ${isOn ? "is-on" : "is-off"}">
-        <span class="shelly-stat-label">Status</span>
-        <span class="shelly-stat-value">${isOn ? "An" : "Aus"}</span>
-      </div>
-      <div class="shelly-stat">
-        <span class="shelly-stat-label">Aktuell</span>
-        <span class="shelly-stat-value">${formatNumber(powerW, 0)} W</span>
-      </div>
-      <div class="shelly-stat">
-        <span class="shelly-stat-label">Heute</span>
-        <span class="shelly-stat-value">${todayKwh.toFixed(3)} kWh</span>
-        <span class="shelly-stat-sub">${todayCost.toFixed(3)} €</span>
-      </div>
-      <div class="shelly-stat">
-        <span class="shelly-stat-label">Gesamt</span>
-        <span class="shelly-stat-value">${totalKwh.toFixed(2)} kWh</span>
-        <span class="shelly-stat-sub">${totalCost.toFixed(2)} €</span>
-      </div>
-      ${tempC !== null ? `
-      <div class="shelly-stat ${tempC > 60 ? "is-warm" : ""}">
-        <span class="shelly-stat-label">Steckdose</span>
-        <span class="shelly-stat-value">${tempC.toFixed(1)} °C</span>
-      </div>` : ""}
-    </div>`;
-
-  if (data._recorded_at) {
-    const recorded = new Date(data._recorded_at);
-    const ageSec   = Math.floor((Date.now() - recorded.getTime()) / 1000);
-    const ageText  = ageSec < 60
-      ? `vor ${ageSec}s`
-      : ageSec < 3600
-        ? `vor ${Math.floor(ageSec/60)} min`
-        : `vor ${Math.floor(ageSec/3600)} h`;
-    el.shellyUpdateTime.textContent = `Letzter Push: ${recorded.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} (${ageText})`;
-  }
-}
-
-function startShellyPolling() {
-  stopShellyPolling();
-  shellyPollTimer = setInterval(renderShellyPanel, 30000);
-}
-
-function stopShellyPolling() {
-  if (shellyPollTimer) { clearInterval(shellyPollTimer); shellyPollTimer = null; }
+function sortedByTime(entries) {
+  return [...entries].sort((a, b) => entryMoment(a) - entryMoment(b));
 }
 
 
 /* ============================================================
-   Init
+   Init & Navigation
    ============================================================ */
 
 async function init() {
   loadShellySettings();
-  initTabs();
+  loadUsedExtractions();
+  bindEvents();
   initFormDefaults();
-  initEvents();
   renderSkeletons();
 
-  if (!supabaseClient) { showToast("Supabase konnte nicht geladen werden."); return; }
-  if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes("DEIN_") || SUPABASE_ANON_KEY.includes("...")) {
-    setFormMessage("Bitte zuerst deinen Supabase Publishable Key in app.js eintragen.", "error");
-    showToast("Supabase Key fehlt."); return;
+  if (!supabaseClient) {
+    showToast("Supabase konnte nicht geladen werden. Internetverbindung prüfen.", "error");
+    return;
   }
 
   await reloadAll();
-  setTimeout(() => el.coffeeName?.focus(), 350);
+  openView("add");
 }
 
 function initFormDefaults() {
-  el.entryDate.value  = todayISO();
-  el.entryTime.value  = nowTime();
-  el.doseG.value      = "18";
-  el.yieldG.value     = "36";
+  el.entryDate.value = todayISO();
+  el.entryTime.value = nowTime();
+  el.doseG.value = "18";
+  el.yieldG.value = "36";
   el.caffeineMg.value = "80";
   el.cleaningDate.value = todayISO();
+  setRating("");
+  updateRatio();
 }
 
-function initTabs() {
-  document.querySelectorAll(".tab").forEach(tab => {
-    tab.addEventListener("click", () => openView(tab.dataset.view));
+function openView(viewName, { scroll = true } = {}) {
+  state.currentView = viewName;
+  document.querySelectorAll(".tab").forEach((t) => {
+    const active = t.dataset.view === viewName;
+    t.classList.toggle("active", active);
+    t.setAttribute("aria-current", active ? "page" : "false");
   });
-}
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${viewName}`));
+  if (scroll) window.scrollTo({ top: 0, behavior: "auto" });
 
-function openView(viewName) {
-  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === viewName));
-  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
-  const target = $(`view-${viewName}`);
-  if (target) target.classList.add("active");
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  stopTimers();
 
+  if (viewName === "add") {
+    checkExtractionSuggestion();
+    startExtractionPolling();
+  }
+  if (viewName === "recommendations") renderRecommendations();
+  if (viewName === "history") renderEntries();
+  if (viewName === "equipment") { renderCleaning(); renderEquipment(); }
   if (viewName === "dashboard") {
     renderDashboard();
-    startShellyPolling();
-  } else {
-    stopShellyPolling();
-    if (viewName === "recommendations") renderRecommendations();
-    if (viewName === "history")         renderEntries();
-    if (viewName === "equipment")       renderEquipment();
+    renderShellyPanel();
+    timers.shelly = setInterval(renderShellyPanel, SHELLY_POLL_MS);
   }
 }
 
-function initEvents() {
-  el.cleaningForm.addEventListener("submit", saveCleaning);
-  el.resetCleaningBtn.addEventListener("click", resetCleaningForm);
-   
-  el.entryForm.addEventListener("submit", saveEntry);
-  el.resetFormBtn.addEventListener("click", resetForm);
-  el.cancelEditBtn.addEventListener("click", cancelEdit);
-  el.duplicateLastBtn.addEventListener("click", duplicateLastShot);
+function stopTimers() {
+  clearInterval(timers.shelly);
+  clearInterval(timers.extraction);
+  timers.shelly = null;
+  timers.extraction = null;
+}
 
-  el.coffeeName.addEventListener("input", updateCurrentRecommendation);
-  el.grinderSelect.addEventListener("change", updateCurrentRecommendation);
-  el.brewMethod.addEventListener("change", () => { el.caffeineMg.value = methodDefaultCaffeine(el.brewMethod.value); });
+function startExtractionPolling() {
+  clearInterval(timers.extraction);
+  timers.extraction = setInterval(checkExtractionSuggestion, EXTRACTION_POLL_MS);
+}
+
+function bindEvents() {
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => openView(tab.dataset.view));
+  });
+
+  el.refreshBtn.addEventListener("click", manualRefresh);
+
+  /* Shot */
+  el.entryForm.addEventListener("submit", saveEntry);
+  el.resetFormBtn.addEventListener("click", () => { resetForm(); showToast("Formular geleert"); });
+  el.cancelEditBtn.addEventListener("click", () => { resetForm(); openView("history"); });
+  el.deleteEntryBtn.addEventListener("click", deleteEditedEntry);
+  el.duplicateLastBtn.addEventListener("click", duplicateLastShot);
   el.applyRecommendationBtn.addEventListener("click", applyCurrentRecommendation);
 
-  el.filterDate.addEventListener("change",   () => { state.filters.date   = el.filterDate.value;   renderEntries(); });
-  el.filterCoffee.addEventListener("change", () => { state.filters.coffee = el.filterCoffee.value; renderEntries(); });
+  el.coffeeName.addEventListener("input", () => { updateCurrentRecommendation(); renderQuickCoffeeButtons(); });
+  el.grinderSelect.addEventListener("change", updateCurrentRecommendation);
+  el.brewMethod.addEventListener("change", () => {
+    el.caffeineMg.value = methodDefaultCaffeine(el.brewMethod.value);
+    updateCurrentRecommendation();
+    renderQuickCoffeeButtons();
+  });
+  el.doseG.addEventListener("input", updateRatio);
+  el.yieldG.addEventListener("input", updateRatio);
+
+  el.ratingPicker.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-value]");
+    if (!btn) return;
+    const v = btn.dataset.value;
+    setRating(el.rating.value === v ? "" : v);
+  });
+
+  el.extractionSuggestion.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-ex]");
+    if (!btn || !state.shownExtraction) return;
+    if (btn.dataset.ex === "apply") applyExtraction(state.shownExtraction);
+    else dismissExtraction(state.shownExtraction);
+  });
+
+  el.quickCoffeeButtons.addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-coffee]");
+    if (chip) selectQuickCoffee(chip.dataset.coffee);
+  });
+
+  /* Verlauf */
+  el.filterDate.addEventListener("change", () => { state.filters.date = el.filterDate.value; state.historyLimit = HISTORY_PAGE; renderEntries(); });
+  el.filterCoffee.addEventListener("change", () => { state.filters.coffee = el.filterCoffee.value; state.historyLimit = HISTORY_PAGE; renderEntries(); });
   el.clearFiltersBtn.addEventListener("click", () => {
-    state.filters.date = state.filters.coffee = "";
-    el.filterDate.value = el.filterCoffee.value = "";
+    state.filters = { date: "", coffee: "" };
+    el.filterDate.value = "";
+    el.filterCoffee.value = "";
     renderEntries();
   });
+  el.loadMoreBtn.addEventListener("click", () => { state.historyLimit += HISTORY_PAGE; renderEntries(); });
+
+  /* Geräte */
+  el.cleaningStatus.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-clean]");
+    if (btn) quickClean(btn.dataset.id, btn.dataset.clean);
+  });
+  el.cleaningForm.addEventListener("submit", saveCleaning);
+  el.resetCleaningBtn.addEventListener("click", resetCleaningForm);
+  el.equipmentForm.addEventListener("submit", saveEquipment);
+  el.cancelEquipmentEditBtn.addEventListener("click", () => { resetEquipmentForm(); el.equipmentFormDetails.open = false; });
+  el.deleteEquipmentBtn.addEventListener("click", deleteEditedEquipment);
+
+  /* Mehr */
+  el.saveSettingsBtn.addEventListener("click", saveSettings);
+  el.saveShellyBtn.addEventListener("click", saveShellySettings);
   el.deleteAllBtn.addEventListener("click", deleteAllEntries);
 
-  el.equipmentForm.addEventListener("submit", saveEquipment);
-  el.resetEquipmentBtn.addEventListener("click", resetEquipmentForm);
-  el.cancelEquipmentEditBtn.addEventListener("click", resetEquipmentForm);
+  /* App kommt aus dem Hintergrund zurück */
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) { stopTimers(); return; }
+    if (Date.now() - state.lastLoadedAt > RELOAD_AFTER_MS) await reloadAll();
+    openView(state.currentView, { scroll: false });
+  });
 
-  el.saveSettingsBtn.addEventListener("click", saveSettings);
-  el.saveShellyBtn.addEventListener("click",   saveShellySettings);
+  window.addEventListener("resize", () => {
+    clearTimeout(timers.resize);
+    timers.resize = setTimeout(() => { if (isViewActive("dashboard")) renderDashboard(); }, 200);
+  });
+}
 
-  el.fabAdd.addEventListener("click", () => { cancelEdit(); openView("add"); setTimeout(() => el.coffeeName?.focus(), 80); });
-  window.addEventListener("resize", () => { if ($("view-dashboard").classList.contains("active")) renderDashboard(); });
+async function manualRefresh() {
+  el.refreshBtn.classList.add("spinning");
+  el.refreshBtn.disabled = true;
+  state.shelly.baseline = null;
+  await reloadAll();
+  openView(state.currentView, { scroll: false });
+  el.refreshBtn.classList.remove("spinning");
+  el.refreshBtn.disabled = false;
+  showToast("Aktualisiert");
 }
 
 
 /* ============================================================
-   Load
+   Laden
    ============================================================ */
 
 async function reloadAll() {
-  state.isLoading = true;
-  renderSkeletons();
   await Promise.all([loadSettings(), loadEntries(), loadEquipment(), loadCleaningLogs()]);
-  state.recommendations = buildRecommendations(state.entries);
-  state.isLoading = false;
+  state.lastLoadedAt = Date.now();
   renderAll();
 }
 
@@ -574,546 +548,975 @@ async function loadSettings() {
 }
 
 async function loadEntries() {
-  const { data, error } = await supabaseClient.from(TABLE_ENTRIES).select("*")
-    .order("entry_date", { ascending: false }).order("entry_time", { ascending: false });
-  if (error) { console.error("Entries:", error); showToast("Shots konnten nicht geladen werden."); state.entries = []; return; }
+  const { data, error } = await supabaseClient
+    .from(TABLE_ENTRIES).select("*")
+    .order("entry_date", { ascending: false })
+    .order("entry_time", { ascending: false });
+  if (error) { console.error("Entries:", error); showToast("Shots konnten nicht geladen werden.", "error"); return; }
   state.entries = data || [];
 }
 
 async function loadEquipment() {
-  const { data, error } = await supabaseClient.from(TABLE_EQUIPMENT).select("*")
-    .order("category", { ascending: true }).order("name", { ascending: true });
-  if (error) { console.error("Equipment:", error); state.equipment = []; return; }
+  const { data, error } = await supabaseClient
+    .from(TABLE_EQUIPMENT).select("*")
+    .order("category", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) { console.error("Equipment:", error); return; }
   state.equipment = data || [];
+}
+
+async function loadCleaningLogs() {
+  const { data, error } = await supabaseClient
+    .from(TABLE_CLEANING).select("*")
+    .order("cleaned_at", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) { console.error("Cleaning:", error); return; }
+  state.cleaningLogs = data || [];
 }
 
 
 /* ============================================================
-   Render
+   Rendern (global)
    ============================================================ */
 
 function renderAll() {
   state.recommendations = buildRecommendations(state.entries);
   renderEquipmentSelects();
+  renderCleaningEquipmentSelect();
   renderCoffeeSuggestions();
   renderQuickCoffeeButtons();
+  updateCurrentRecommendation();
   renderRecommendations();
   renderEntries();
-  renderDashboard();
   renderEquipment();
   renderCleaning();
-  updateCurrentRecommendation();
+  if (isViewActive("dashboard")) renderDashboard();
 }
 
 function renderSkeletons() {
-  el.entriesList.innerHTML        = `<div class="skeleton skeleton-line"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div>`;
-  el.recommendationsList.innerHTML= `<div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div>`;
-  el.equipmentList.innerHTML      = `<div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div>`;
+  const sk = `<div class="skeleton"></div><div class="skeleton"></div>`;
+  el.entriesList.innerHTML = sk;
+  el.recommendationsList.innerHTML = sk;
+  el.equipmentList.innerHTML = sk;
 }
 
 function renderEquipmentSelects() {
   const curM = el.machineSelect.value;
   const curG = el.grinderSelect.value;
-  const machines = state.equipment.filter(i => i.is_active && normalize(i.category).includes("maschine"));
-  const grinders = state.equipment.filter(i => i.is_active && normalize(i.category).includes("muhle"));
+  const machines = state.equipment.filter((i) => i.is_active && isMachine(i));
+  const grinders = state.equipment.filter((i) => i.is_active && isGrinder(i));
 
-  el.machineSelect.innerHTML = `<option value="">Keine Maschine gewählt</option>`;
-  el.grinderSelect.innerHTML = `<option value="">Keine Mühle gewählt</option>`;
-  machines.forEach(i => { const o = document.createElement("option"); o.value = i.id; o.textContent = equipmentLabel(i); el.machineSelect.appendChild(o); });
-  grinders.forEach(i => { const o = document.createElement("option"); o.value = i.id; o.textContent = equipmentLabel(i); el.grinderSelect.appendChild(o); });
+  el.machineSelect.innerHTML = `<option value="">Keine Maschine</option>` +
+    machines.map((i) => `<option value="${i.id}">${escapeHTML(equipmentLabel(i))}</option>`).join("");
+  el.grinderSelect.innerHTML = `<option value="">Keine Mühle</option>` +
+    grinders.map((i) => `<option value="${i.id}">${escapeHTML(equipmentLabel(i))}</option>`).join("");
 
-  if (curM) el.machineSelect.value = curM;
-  if (curG) el.grinderSelect.value = curG;
+  el.machineSelect.value = curM;
+  el.grinderSelect.value = curG;
   if (!el.machineSelect.value && machines.length === 1) el.machineSelect.value = machines[0].id;
   if (!el.grinderSelect.value && grinders.length === 1) el.grinderSelect.value = grinders[0].id;
 }
 
-function equipmentLabel(item) { return [item.brand, item.model || item.name].filter(Boolean).join(" "); }
-
 function renderCoffeeSuggestions() {
-  const coffees = Array.from(new Set(state.entries.map(e => e.drink_name).filter(Boolean))).sort((a,b) => a.localeCompare(b, "de"));
-  el.coffeeSuggestions.innerHTML = "";
-  el.filterCoffee.innerHTML = `<option value="">Alle Kaffees</option>`;
-  coffees.forEach(c => {
-    const d = document.createElement("option"); d.value = c; el.coffeeSuggestions.appendChild(d);
-    const f = document.createElement("option"); f.value = c; f.textContent = c; el.filterCoffee.appendChild(f);
-  });
+  const coffees = Array.from(new Set(state.entries.map((e) => e.drink_name).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, "de"));
+  el.coffeeSuggestions.innerHTML = coffees.map((c) => `<option value="${escapeHTML(c)}"></option>`).join("");
+  el.filterCoffee.innerHTML = `<option value="">Alle Kaffees</option>` +
+    coffees.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
   el.filterCoffee.value = state.filters.coffee;
-}
-
-function renderQuickCoffeeButtons() {
-  el.quickCoffeeButtons.innerHTML = "";
-  const top = getTopCoffeeNames().slice(0, 6);
-  if (!top.length) { el.quickCoffeeButtons.innerHTML = `<div class="empty full">Noch keine Kaffees getrackt. Nach ein paar Shots erscheinen hier Schnellbuttons.</div>`; return; }
-  top.forEach(({ name, count }) => {
-    const rec = findRecommendation(name, el.grinderSelect.value);
-    const btn = document.createElement("button");
-    btn.type = "button"; btn.className = "quick-btn";
-    btn.innerHTML = `<span>☕</span><strong>${escapeHTML(name)}</strong><small>${count} Shots${rec ? ` · MG ${formatNumber(rec.best_grind, 1)}` : ""}</small>`;
-    btn.addEventListener("click", () => { el.coffeeName.value = name; updateCurrentRecommendation(); openView("add"); });
-    el.quickCoffeeButtons.appendChild(btn);
-  });
 }
 
 function getTopCoffeeNames() {
   const map = new Map();
-  state.entries.forEach(e => { if (!e.drink_name) return; map.set(e.drink_name, (map.get(e.drink_name) || 0) + 1); });
-  return Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a,b) => b.count - a.count);
+  state.entries.forEach((e) => { if (e.drink_name) map.set(e.drink_name, (map.get(e.drink_name) || 0) + 1); });
+  return Array.from(map, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
 }
 
 
 /* ============================================================
-   Recommendations
+   Shelly: erkannte Extraktion vorschlagen
+   ============================================================ */
+
+function loadUsedExtractions() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("ct_used_extractions") || "[]");
+    state.usedExtractions = new Set(raw.map(String));
+  } catch { state.usedExtractions = new Set(); }
+}
+
+function markExtractionUsed(id) {
+  state.usedExtractions.add(String(id));
+  const list = Array.from(state.usedExtractions).slice(-60);
+  state.usedExtractions = new Set(list);
+  try { localStorage.setItem("ct_used_extractions", JSON.stringify(list)); } catch { /* ignore */ }
+}
+
+function hideExtraction() {
+  state.shownExtraction = null;
+  el.extractionSuggestion.classList.add("hidden");
+  el.extractionSuggestion.innerHTML = "";
+}
+
+async function checkExtractionSuggestion() {
+  if (!supabaseClient || state.extractionErrors >= 3) return;
+  if (state.editingId || !isViewActive("add") || document.hidden) { if (state.editingId) hideExtraction(); return; }
+
+  const since = new Date(Date.now() - EXTRACTION_LOOKBACK_MIN * 60000).toISOString();
+  const { data, error } = await supabaseClient
+    .from(TABLE_EXTRACTIONS)
+    .select("id, started_at, duration_s, avg_power_w, peak_power_w")
+    .gte("started_at", since)
+    .order("started_at", { ascending: false })
+    .limit(5);
+
+  if (error) {
+    state.extractionErrors++;
+    console.warn("Extraktionen:", error.message);
+    hideExtraction();
+    return;
+  }
+  state.extractionErrors = 0;
+
+  const next = (data || []).find((x) => !state.usedExtractions.has(String(x.id)));
+  if (!next) { hideExtraction(); return; }
+  renderExtractionSuggestion(next);
+}
+
+function renderExtractionSuggestion(x) {
+  state.shownExtraction = x;
+  const started = new Date(x.started_at);
+  const duration = Math.round(Number(x.duration_s) * 10) / 10;
+  el.extractionSuggestion.innerHTML = `
+    <div class="ex-body">
+      <span class="ex-time">${formatNumber(duration, 1)} s</span>
+      <p>Extraktion erkannt, ${nowTime(started)} Uhr (${relativeAge(Date.now() - started.getTime())})</p>
+    </div>
+    <div class="extraction-actions">
+      <button class="primary" type="button" data-ex="apply">Übernehmen</button>
+      <button class="ghost" type="button" data-ex="dismiss" aria-label="Vorschlag verwerfen">×</button>
+    </div>`;
+  el.extractionSuggestion.classList.remove("hidden");
+}
+
+function applyExtraction(x) {
+  const started = new Date(x.started_at);
+  el.extractionTime.value = String(Math.round(Number(x.duration_s) * 10) / 10);
+  el.entryDate.value = localISO(started);
+  el.entryTime.value = nowTime(started);
+  markExtractionUsed(x.id);
+  hideExtraction();
+  flashField(el.extractionTime);
+  showToast(`Extraktionszeit übernommen: ${formatNumber(x.duration_s, 1)} s`);
+}
+
+function dismissExtraction(x) {
+  markExtractionUsed(x.id);
+  hideExtraction();
+}
+
+function flashField(input) {
+  input.classList.remove("flash");
+  void input.offsetWidth;
+  input.classList.add("flash");
+}
+
+
+/* ============================================================
+   Shelly: Energie-Panel
+   ============================================================ */
+
+function loadShellySettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem("ct_shelly") || "{}");
+    if (Number(s.price) > 0) state.shelly.price = Number(s.price);
+  } catch { /* ignore */ }
+  el.shellyPrice.value = state.shelly.price;
+}
+
+function saveShellySettings() {
+  const price = toNumber(el.shellyPrice.value);
+  if (price === null || price <= 0) { setMsg(el.shellySettingsMessage, "Bitte einen Preis größer 0 eintragen.", "error"); return; }
+  state.shelly.price = price;
+  try { localStorage.setItem("ct_shelly", JSON.stringify({ price })); } catch { /* ignore */ }
+  setMsg(el.shellySettingsMessage, "");
+  showToast("Strompreis gespeichert");
+}
+
+/* Zählerstand zu Tagesbeginn: letzter Wert vor Mitternacht, sonst erster Wert von heute */
+async function fetchShellyBaseline(todayStart) {
+  const before = await supabaseClient
+    .from(TABLE_SHELLY_LOGS).select("aenergy_wh")
+    .lt("recorded_at", todayStart).not("aenergy_wh", "is", null)
+    .order("recorded_at", { ascending: false }).limit(1).maybeSingle();
+  if (before.data) return Number(before.data.aenergy_wh);
+
+  const first = await supabaseClient
+    .from(TABLE_SHELLY_LOGS).select("aenergy_wh")
+    .gte("recorded_at", todayStart).not("aenergy_wh", "is", null)
+    .order("recorded_at", { ascending: true }).limit(1).maybeSingle();
+  return first.data ? Number(first.data.aenergy_wh) : null;
+}
+
+async function renderShellyPanel() {
+  if (!supabaseClient) return;
+  const today = todayISO();
+  const todayStart = startOfTodayISO();
+
+  if (!el.shellyContent.querySelector(".shelly-stats")) {
+    el.shellyContent.innerHTML = `<div class="empty">Lade Shelly-Daten …</div>`;
+  }
+
+  const needBaseline = !state.shelly.baseline || state.shelly.baseline.date !== today;
+
+  const [latestRes, extrRes, baselineWh] = await Promise.all([
+    supabaseClient.from(TABLE_SHELLY_LOGS)
+      .select("recorded_at, output, apower_w, aenergy_wh, temperature_c")
+      .order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
+    supabaseClient.from(TABLE_EXTRACTIONS)
+      .select("started_at, duration_s")
+      .gte("started_at", todayStart)
+      .order("started_at", { ascending: false }).limit(100),
+    needBaseline ? fetchShellyBaseline(todayStart) : Promise.resolve(state.shelly.baseline.wh),
+  ]);
+
+  const latest = latestRes.data;
+  if (latestRes.error || !latest) {
+    el.shellyContent.innerHTML = `
+      <div class="shelly-error">
+        Noch keine Daten der Shelly in der Datenbank. Prüfe in der Shelly-App unter Skripte, ob „SyncSupabase“ läuft.
+      </div>`;
+    setBadge(el.shellyStatusBadge, "Keine Daten", "is-warn");
+    el.shellyUpdateTime.textContent = "";
+    return;
+  }
+
+  if (needBaseline && baselineWh !== null) state.shelly.baseline = { date: today, wh: baselineWh };
+
+  const price    = state.shelly.price;
+  const recorded = new Date(latest.recorded_at);
+  const ageMs    = Date.now() - recorded.getTime();
+  const isOn     = Boolean(latest.output);
+  const stale    = isOn && ageMs > SHELLY_STALE_MIN * 60000;
+  const totalWh  = Number(latest.aenergy_wh) || 0;
+  const tempC    = latest.temperature_c != null ? Number(latest.temperature_c) : null;
+
+  let todayKwh = 0;
+  if (state.shelly.baseline && state.shelly.baseline.date === today) {
+    if (totalWh < state.shelly.baseline.wh) state.shelly.baseline.wh = totalWh; // Zähler wurde zurückgesetzt
+    else todayKwh = (totalWh - state.shelly.baseline.wh) / 1000;
+  }
+  const totalKwh = totalWh / 1000;
+
+  const extractions = extrRes.error ? [] : (extrRes.data || []);
+  const lastExtr = extractions[0];
+
+  let statusText = "Aus", statusClass = "is-off";
+  if (isOn && !stale) { statusText = "An"; statusClass = "is-on"; }
+  if (stale) { statusText = "Unklar"; statusClass = "is-warn"; }
+
+  setBadge(el.shellyStatusBadge,
+    stale ? "Keine aktuellen Daten" : isOn ? "Maschine an" : "Maschine aus",
+    stale ? "is-warn" : isOn ? "is-ok" : "is-off");
+
+  const nb = "\u00a0"; // Zahl und Einheit nicht umbrechen
+  el.shellyContent.innerHTML = `
+    <div class="shelly-stats">
+      <div class="shelly-stat shelly-stat-status ${statusClass}">
+        <span class="shelly-stat-label">Status</span>
+        <span class="shelly-stat-value">${statusText}${isOn && !stale ? `<small>${formatNumber(latest.apower_w, 0)}${nb}W</small>` : ""}</span>
+      </div>
+      <div class="shelly-stat">
+        <span class="shelly-stat-label">Heute</span>
+        <span class="shelly-stat-value">${formatFixed(todayKwh, 2)}${nb}kWh</span>
+        <span class="shelly-stat-sub">${formatFixed(todayKwh * price, 2)}${nb}€</span>
+      </div>
+      <div class="shelly-stat">
+        <span class="shelly-stat-label">Shots erkannt</span>
+        <span class="shelly-stat-value">${extrRes.error ? "–" : extractions.length}</span>
+        <span class="shelly-stat-sub">${lastExtr ? `zuletzt ${formatNumber(lastExtr.duration_s, 1)}${nb}s` : "heute"}</span>
+      </div>
+      <div class="shelly-stat">
+        <span class="shelly-stat-label">Zähler gesamt</span>
+        <span class="shelly-stat-value">${formatNumber(totalKwh, 1)}${nb}kWh</span>
+        <span class="shelly-stat-sub">${formatFixed(totalKwh * price, 2)}${nb}€</span>
+      </div>
+      <div class="shelly-stat ${tempC !== null && tempC > 60 ? "is-warn" : ""}">
+        <span class="shelly-stat-label">Steckdose</span>
+        <span class="shelly-stat-value">${tempC !== null ? `${formatNumber(tempC, 1)}${nb}°C` : "–"}</span>
+        <span class="shelly-stat-sub">Temperatur</span>
+      </div>
+    </div>`;
+
+  el.shellyUpdateTime.textContent = isOn
+    ? `Letzter Messwert ${nowTime(recorded)} Uhr, ${relativeAge(ageMs)}`
+    : `Maschine aus seit ${recorded.toLocaleDateString("de-DE") === new Date().toLocaleDateString("de-DE") ? "" : recorded.toLocaleDateString("de-DE") + ", "}${nowTime(recorded)} Uhr`;
+}
+
+function setBadge(node, text, cls) {
+  node.textContent = text;
+  node.classList.remove("is-ok", "is-off", "is-warn");
+  if (cls) node.classList.add(cls);
+}
+
+
+/* ============================================================
+   Empfehlungen
    ============================================================ */
 
 function scoreShot(entry) {
-  const rating   = Number(entry.rating);
-  const time     = Number(entry.extraction_time_s);
-  const pressure = Number(entry.pressure_bar);
-  const tTime    = (Number(state.settings.target_time_min_s) + Number(state.settings.target_time_max_s)) / 2;
-  const tPress   = (Number(state.settings.target_pressure_min_bar) + Number(state.settings.target_pressure_max_bar)) / 2;
+  const rating   = toNumber(entry.rating);
+  const time     = toNumber(entry.extraction_time_s);
+  const pressure = toNumber(entry.pressure_bar);
+  const s        = state.settings;
+  const tTime    = (Number(s.target_time_min_s) + Number(s.target_time_max_s)) / 2;
+  const tPress   = (Number(s.target_pressure_min_bar) + Number(s.target_pressure_max_bar)) / 2;
   let score = 0;
-  if (Number.isFinite(rating))   score += (rating / 5) * 55; else score += 18;
-  if (Number.isFinite(time))     score += Math.max(0, 25 - Math.abs(time - tTime) * 3.2);
-  if (Number.isFinite(pressure)) score += Math.max(0, 14 - Math.abs(pressure - tPress) * 4);
-  if (entry.entry_date) { const age = (Date.now() - new Date(`${entry.entry_date}T00:00:00`).getTime()) / 86400000; score += Math.max(0, 6 - age * 0.08); }
+  score += rating !== null ? (rating / 5) * 55 : 18;
+  if (time !== null)     score += Math.max(0, 25 - Math.abs(time - tTime) * 3.2);
+  if (pressure !== null) score += Math.max(0, 14 - Math.abs(pressure - tPress) * 4);
+  if (entry.entry_date)  score += Math.max(0, 6 - daysSince(entry.entry_date) * 0.08);
   return Math.round(score);
 }
 
 function isShotInTarget(entry) {
-  const time     = Number(entry.extraction_time_s);
-  const pressure = Number(entry.pressure_bar);
-  const timeOk   = Number.isFinite(time) && time >= Number(state.settings.target_time_min_s) && time <= Number(state.settings.target_time_max_s);
-  const pressOk  = !Number.isFinite(pressure) || (pressure >= Number(state.settings.target_pressure_min_bar) && pressure <= Number(state.settings.target_pressure_max_bar));
+  const s = state.settings;
+  const time = toNumber(entry.extraction_time_s);
+  const pressure = toNumber(entry.pressure_bar);
+  const timeOk  = time !== null && time >= s.target_time_min_s && time <= s.target_time_max_s;
+  const pressOk = pressure === null || (pressure >= s.target_pressure_min_bar && pressure <= s.target_pressure_max_bar);
   return timeOk && pressOk;
 }
 
-function recommendationKey(e) { return `${normalize(e.drink_name)}__${e.grinder_id || "no-grinder"}`; }
+/* Reinigungs-Zeitpunkt: exakt über created_at, wenn am selben Tag angelegt, sonst Tagesbeginn */
+function cleaningMoment(log) {
+  if (log.created_at) {
+    const created = new Date(log.created_at);
+    if (localISO(created) === log.cleaned_at) return created;
+  }
+  return new Date(`${log.cleaned_at}T00:00:00`);
+}
+
+function getLastCleaning(equipmentId, type = null) {
+  return state.cleaningLogs.find((c) =>
+    String(c.equipment_id) === String(equipmentId) && (!type || c.cleaning_type === type)) || null;
+}
+
+function isShotAfterLastBigCleaning(entry) {
+  if (!entry.grinder_id || !entry.entry_date) return true;
+  const log = getLastCleaning(entry.grinder_id, "gross");
+  if (!log) return true;
+  return entryMoment(entry) >= cleaningMoment(log);
+}
+
+/* Reinigung, die zum Zeitpunkt des Shots zuletzt stattgefunden hat */
+function getCleaningIdForShot(grinderId, date, time) {
+  if (!grinderId) return null;
+  const moment = new Date(`${date}T${time || "00:00:00"}`);
+  const log = state.cleaningLogs.find((c) =>
+    String(c.equipment_id) === String(grinderId) && cleaningMoment(c) <= moment);
+  return log ? log.id : null;
+}
+
+/* Espresso und Doppelter Espresso teilen sich den Mahlgrad, Filter-Methoden nicht */
+function methodGroup(method) {
+  const t = normalize(method || "Espresso");
+  return t.includes("espresso") ? "espresso" : t;
+}
+
+function recommendationKey(e) {
+  return `${normalize(e.drink_name)}__${e.grinder_id || "none"}__${methodGroup(e.drink_type)}`;
+}
 
 function buildRecommendations(entries) {
   const groups = new Map();
   entries
-    .filter(e => e.drink_name && e.mahlgrad !== null && e.mahlgrad !== undefined)
-    .filter(isShotAfterLastBigCleaning)   // <-- NEU: nur Shots seit letzter großer Reinigung
-    .forEach(e => {
+    .filter((e) => e.drink_name && toNumber(e.mahlgrad) !== null)
+    .forEach((e) => {
       const k = recommendationKey(e);
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(e);
     });
+
   return Array.from(groups.values())
-    .map(buildRecommendationFromGroup)
-    .sort((a,b) => b.score - a.score);
+    .map((group) => {
+      const fresh = group.filter(isShotAfterLastBigCleaning);
+      const stale = fresh.length === 0;
+      return buildRecommendationFromGroup(stale ? group : fresh, stale);
+    })
+    .sort((a, b) => (a.stale - b.stale) || (b.score - a.score));
 }
 
-function buildRecommendationFromGroup(group) {
-  const sorted    = [...group].sort((a,b) => scoreShot(b) - scoreShot(a));
+function buildRecommendationFromGroup(group, stale) {
+  const sorted    = [...group].sort((a, b) => scoreShot(b) - scoreShot(a));
   const best      = sorted[0];
-  const goodShots = group.filter(e => scoreShot(e) >= 75 || isShotInTarget(e));
+  const goodShots = group.filter((e) => scoreShot(e) >= 75 || isShotInTarget(e));
   const baseShots = goodShots.length ? goodShots : [best];
-  const grinds    = baseShots.map(e => Number(e.mahlgrad)).filter(Number.isFinite).sort((a,b) => a-b);
-  const avg = arr => arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : null;
-  const confidence = group.length >= 6 ? "stabil" : group.length >= 3 ? "vorläufig" : "erster Richtwert";
+  const grinds    = baseShots.map((e) => Number(e.mahlgrad)).filter(Number.isFinite).sort((a, b) => a - b);
+  const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+  const nums = (key) => group.map((e) => toNumber(e[key])).filter((v) => v !== null);
+
   return {
-    coffee_name:  best.drink_name,
-    cleaning_info: buildCleaningInfo(best.grinder_id),
-    grinder_id:   best.grinder_id || null,
-    grinder_name: equipmentName(best.grinder_id),
-    best_grind:   Number(best.mahlgrad),
-    grind_min:    grinds[0],
-    grind_max:    grinds[grinds.length - 1],
-    best_entry:   best,
-    shots_count:  group.length,
-    good_count:   goodShots.length,
-    hit_count:    group.filter(isShotInTarget).length,
-    avg_time:     avg(group.map(e => Number(e.extraction_time_s)).filter(Number.isFinite)),
-    avg_pressure: avg(group.map(e => Number(e.pressure_bar)).filter(Number.isFinite)),
-    avg_rating:   avg(group.map(e => Number(e.rating)).filter(Number.isFinite)),
-    score:        scoreShot(best),
-    confidence,
-    hint:         buildGrindHint(best),
+    coffee_name:   best.drink_name,
+    method:        best.drink_type || "Espresso",
+    method_group:  methodGroup(best.drink_type),
+    grinder_id:    best.grinder_id || null,
+    grinder_name:  equipmentName(best.grinder_id),
+    best_grind:    Number(best.mahlgrad),
+    grind_min:     grinds[0],
+    grind_max:     grinds[grinds.length - 1],
+    best_entry:    best,
+    shots_count:   group.length,
+    hit_count:     group.filter(isShotInTarget).length,
+    avg_time:      avg(nums("extraction_time_s")),
+    avg_pressure:  avg(nums("pressure_bar")),
+    avg_rating:    avg(nums("rating")),
+    score:         scoreShot(best),
+    confidence:    group.length >= 6 ? "stabil" : group.length >= 3 ? "vorläufig" : "erster Richtwert",
+    hint:          buildGrindHint(best),
+    stale,
+    cleaning_info: buildCleaningInfo(best.grinder_id, stale),
   };
 }
 
-function buildCleaningInfo(grinderId) {
-  const date = getLastBigCleaningDate(grinderId);
-  if (!date) return null;
-  const days = daysSince(date);
-  return `🧽 Basis: Shots seit letzter großer Reinigung (${formatDateShort(date)}, vor ${days}d)`;
+function buildCleaningInfo(grinderId, stale) {
+  const log = grinderId ? getLastCleaning(grinderId, "gross") : null;
+  if (!log) return null;
+  if (stale) return `Seit der großen Reinigung am ${formatDateShort(log.cleaned_at)} noch kein Shot. Werte stammen von davor – Nullpunkt der Mühle prüfen.`;
+  return `Basis: Shots seit der großen Reinigung am ${formatDateShort(log.cleaned_at)}.`;
 }
 
 function buildGrindHint(entry) {
-  const time    = Number(entry.extraction_time_s);
-  const pressure= Number(entry.pressure_bar);
-  const minT = Number(state.settings.target_time_min_s);
-  const maxT = Number(state.settings.target_time_max_s);
-  const minP = Number(state.settings.target_pressure_min_bar);
-  const maxP = Number(state.settings.target_pressure_max_bar);
-  if (!Number.isFinite(time))                                return "Noch keine Zeitbewertung möglich. Beim nächsten Shot Extraktionszeit eintragen.";
-  if (time < minT)                                           return "Der beste bekannte Shot lief eher zu schnell. Beim nächsten Versuch tendenziell etwas feiner mahlen.";
-  if (time > maxT)                                           return "Der beste bekannte Shot lief eher zu langsam. Beim nächsten Versuch tendenziell etwas gröber mahlen.";
-  if (Number.isFinite(pressure) && pressure < minP)          return "Zeit passt, Druck eher niedrig. Puck Prep prüfen oder minimal feiner mahlen.";
-  if (Number.isFinite(pressure) && pressure > maxP)          return "Zeit passt, Druck eher hoch. Puck Prep prüfen oder minimal gröber mahlen.";
-  return "Sehr guter Bereich. Mahlgrad erstmal beibehalten.";
+  const s = state.settings;
+  const time = toNumber(entry.extraction_time_s);
+  const pressure = toNumber(entry.pressure_bar);
+  if (time === null) return "Beim nächsten Shot die Extraktionszeit eintragen, dann wird die Empfehlung genauer.";
+  if (time < s.target_time_min_s) return "Der beste Shot lief eher zu schnell – beim nächsten Mal etwas feiner mahlen.";
+  if (time > s.target_time_max_s) return "Der beste Shot lief eher zu langsam – beim nächsten Mal etwas gröber mahlen.";
+  if (pressure !== null && pressure < s.target_pressure_min_bar) return "Zeit passt, Druck eher niedrig. Puck-Prep prüfen oder minimal feiner mahlen.";
+  if (pressure !== null && pressure > s.target_pressure_max_bar) return "Zeit passt, Druck eher hoch. Puck-Prep prüfen oder minimal gröber mahlen.";
+  return "Sehr guter Bereich – Mahlgrad beibehalten.";
 }
 
-function findRecommendation(coffeeName, grinderId) {
-  const nc    = normalize(coffeeName);
-  const exact = state.recommendations.find(r => normalize(r.coffee_name) === nc && String(r.grinder_id || "") === String(grinderId || ""));
-  if (exact) return exact;
-  return state.recommendations.find(r => normalize(r.coffee_name) === nc) || null;
+function findRecommendation(coffeeName, grinderId, method = el.brewMethod.value) {
+  const nc = normalize(coffeeName);
+  if (!nc) return null;
+  const mg = methodGroup(method);
+  const same = state.recommendations.filter((r) => normalize(r.coffee_name) === nc && r.method_group === mg);
+  return same.find((r) => String(r.grinder_id || "") === String(grinderId || "")) || same[0] || null;
+}
+
+function grindRangeText(rec) {
+  return rec.grind_min !== rec.grind_max
+    ? `${formatNumber(rec.grind_min, 1)}–${formatNumber(rec.grind_max, 1)}`
+    : formatNumber(rec.best_grind, 1);
 }
 
 function updateCurrentRecommendation() {
-  const coffeeName = el.coffeeName.value.trim();
-  if (!coffeeName) { el.recommendationBox.classList.add("hidden"); return; }
-  const rec = findRecommendation(coffeeName, el.grinderSelect.value);
+  const rec = findRecommendation(el.coffeeName.value.trim(), el.grinderSelect.value);
+  if (!el.coffeeName.value.trim()) { el.recommendationBox.classList.add("hidden"); return; }
+
   el.recommendationBox.classList.remove("hidden");
   if (!rec) {
-    el.recommendationTitle.textContent = "Noch keine Empfehlung";
-    el.recommendationText.textContent  = "Für diesen Kaffee gibt es noch keinen gespeicherten Shot mit Mahlgrad.";
+    el.recommendationBox.classList.remove("is-stale");
+    el.recommendationTitle.textContent = "Neuer Kaffee";
+    el.recommendationText.textContent = "Noch keine Shots mit Mahlgrad – nach dem ersten Shot gibt es hier eine Empfehlung.";
     el.applyRecommendationBtn.classList.add("hidden");
     return;
   }
+
+  el.recommendationBox.classList.toggle("is-stale", rec.stale);
   el.applyRecommendationBtn.classList.remove("hidden");
-  const range = rec.grind_min !== rec.grind_max
-    ? `Bereich ${formatNumber(rec.grind_min, 1)}–${formatNumber(rec.grind_max, 1)}`
-    : `Mahlgrad ${formatNumber(rec.best_grind, 1)}`;
-  el.recommendationTitle.textContent = `Empfehlung: ${range}`;
-  el.recommendationText.textContent  = `${rec.coffee_name} · ${rec.grinder_name} · ${rec.shots_count} Shots · ${rec.confidence} · Ø ${formatNumber(rec.avg_time, 1)}s · Score ${rec.score}. ${rec.hint}`;
+  el.recommendationTitle.textContent = `Empfohlener Mahlgrad: ${grindRangeText(rec)}`;
+  const parts = [
+    `${rec.shots_count} ${rec.shots_count === 1 ? "Shot" : "Shots"} (${rec.confidence})`,
+    rec.avg_time !== null ? `Ø ${formatNumber(rec.avg_time, 1)} s` : null,
+  ].filter(Boolean).join(", ");
+  el.recommendationText.textContent = rec.stale
+    ? `${parts}. ⚠️ Mühle wurde seitdem groß gereinigt – Nullpunkt prüfen.`
+    : `${parts}. ${rec.hint}`;
+}
+
+function applyRecommendation(rec) {
+  el.mahlgrad.value     = rec.best_grind ?? "";
+  el.doseG.value        = rec.best_entry.dose_g ?? el.doseG.value;
+  el.yieldG.value       = rec.best_entry.yield_g ?? el.yieldG.value;
+  el.pressureBar.value  = rec.best_entry.pressure_bar ?? "";
+  el.temperatureC.value = rec.best_entry.temperature_c ?? "";
+  if (rec.grinder_id && !el.grinderSelect.value) el.grinderSelect.value = rec.grinder_id;
+  updateRatio();
+  flashField(el.mahlgrad);
 }
 
 function applyCurrentRecommendation() {
   const rec = findRecommendation(el.coffeeName.value.trim(), el.grinderSelect.value);
   if (!rec) return;
-  el.mahlgrad.value     = rec.best_grind ?? "";
-  el.doseG.value        = rec.best_entry.dose_g ?? "18";
-  el.yieldG.value       = rec.best_entry.yield_g ?? "36";
-  el.pressureBar.value  = rec.best_entry.pressure_bar ?? "";
-  el.temperatureC.value = rec.best_entry.temperature_c ?? "";
-  setFormMessage("Empfehlung übernommen.");
+  applyRecommendation(rec);
+  showToast(`Mahlgrad ${formatNumber(rec.best_grind, 1)} übernommen`);
 }
 
 function renderRecommendations() {
-  el.recommendationsCount.textContent = `${state.recommendations.length} Empfehlungen`;
-  el.recommendationsList.innerHTML    = "";
+  el.recommendationsCount.textContent = String(state.recommendations.length);
+
   if (!state.recommendations.length) {
-    el.recommendationsList.innerHTML = `<div class="empty">Noch keine Empfehlungen. Speichere ein paar Shots mit Kaffee, Mühle, Mahlgrad und Bewertung.</div>`;
+    el.recommendationsList.innerHTML = `<div class="empty">Noch keine Empfehlungen. Speichere ein paar Shots mit Kaffee und Mahlgrad.</div>`;
     return;
   }
-  state.recommendations.forEach(rec => {
-    const card  = document.createElement("article");
-    card.className = `recommendation-card ${confidenceClass(rec.confidence)}`;
-    const range = rec.grind_min !== rec.grind_max
-      ? `${formatNumber(rec.grind_min, 1)}–${formatNumber(rec.grind_max, 1)}`
-      : `${formatNumber(rec.best_grind, 1)}`;
-    card.innerHTML = `
-      <div class="recommendation-top">
-        <div><h3>${escapeHTML(rec.coffee_name)}</h3><p>${escapeHTML(rec.grinder_name)} · ${rec.shots_count} Shots · ${rec.confidence}</p></div>
-        <div class="grind-badge"><span>MG</span><strong>${range}</strong></div>
+
+  el.recommendationsList.innerHTML = state.recommendations.map((rec, i) => `
+    <article class="item-card rec-card ${rec.stale ? "mid" : confidenceClass(rec.confidence)}">
+      <div class="rec-top">
+        <div>
+          <h3>${escapeHTML(rec.coffee_name)}</h3>
+          <p>${rec.method_group === "espresso" ? "" : `${escapeHTML(rec.method)}, `}${escapeHTML(rec.grinder_name)}, ${rec.shots_count} ${rec.shots_count === 1 ? "Shot" : "Shots"}, ${rec.confidence}</p>
+        </div>
+        <div class="grind-badge"><span>Mahlgrad</span><strong>${grindRangeText(rec)}</strong></div>
       </div>
-      <p class="entry-line muted">⭐ Ø ${formatNumber(rec.avg_rating, 1)}/5 · ⏱️ Ø ${formatNumber(rec.avg_time, 1)}s · 🧭 Ø ${formatNumber(rec.avg_pressure, 1)} bar · 🎯 ${rec.hit_count}/${rec.shots_count} · Score ${rec.score}</p>
-      <p>${escapeHTML(rec.hint)}</p>
-      ${rec.cleaning_info ? `<p class="cleaning-info-note">${escapeHTML(rec.cleaning_info)}</p>` : ""}
-      <div class="actions compact-actions">
-        <button class="primary use-rec-btn" type="button">Für neuen Shot nutzen</button>
-      </div>`;
-    card.querySelector(".use-rec-btn").addEventListener("click", () => {
+      <div class="meta">
+        ${rec.avg_rating !== null ? `<span>⭐ ${formatNumber(rec.avg_rating, 1)}</span>` : ""}
+        ${rec.avg_time !== null ? `<span>⏱️ ${formatNumber(rec.avg_time, 1)} s</span>` : ""}
+        ${rec.avg_pressure !== null ? `<span>🧭 ${formatNumber(rec.avg_pressure, 1)} bar</span>` : ""}
+        <span>🎯 ${rec.hit_count}/${rec.shots_count} im Ziel</span>
+      </div>
+      <p class="hint">${escapeHTML(rec.hint)}</p>
+      ${rec.cleaning_info ? `<p class="info-note ${rec.stale ? "warn" : ""}">${escapeHTML(rec.cleaning_info)}</p>` : ""}
+      <button class="primary" type="button" data-rec="${i}">Für neuen Shot nutzen</button>
+    </article>`).join("");
+
+  el.recommendationsList.querySelectorAll("[data-rec]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const rec = state.recommendations[Number(btn.dataset.rec)];
       resetForm();
-      el.coffeeName.value    = rec.coffee_name;
-      el.grinderSelect.value = rec.grinder_id || "";
-      applyRecommendationFromObject(rec);
+      el.coffeeName.value = rec.coffee_name;
+      el.brewMethod.value = rec.method;
+      el.caffeineMg.value = methodDefaultCaffeine(rec.method);
+      if (rec.grinder_id) el.grinderSelect.value = rec.grinder_id;
+      applyRecommendation(rec);
+      updateCurrentRecommendation();
+      renderQuickCoffeeButtons();
       openView("add");
     });
-    el.recommendationsList.appendChild(card);
   });
 }
 
-function applyRecommendationFromObject(rec) {
-  el.mahlgrad.value     = rec.best_grind ?? "";
-  el.doseG.value        = rec.best_entry.dose_g ?? "18";
-  el.yieldG.value       = rec.best_entry.yield_g ?? "36";
-  el.pressureBar.value  = rec.best_entry.pressure_bar ?? "";
-  el.temperatureC.value = rec.best_entry.temperature_c ?? "";
-  updateCurrentRecommendation();
-}
-
 function confidenceClass(c) {
-  if (c === "stabil")    return "confidence-high";
-  if (c === "vorläufig") return "confidence-mid";
-  return "confidence-low";
+  if (c === "stabil") return "good";
+  if (c === "vorläufig") return "mid";
+  return "bad";
 }
 
 
 /* ============================================================
-   Shot Form
+   Shot-Formular
    ============================================================ */
+
+const RATING_TEXT = { "": "keine", 1: "schlecht", 2: "geht so", 3: "okay", 4: "gut", 5: "sehr gut" };
+
+function setRating(value) {
+  const v = value === null || value === undefined ? "" : String(value);
+  el.rating.value = v;
+  el.ratingPicker.querySelectorAll("button[data-value]").forEach((btn) => {
+    const on = v !== "" && Number(btn.dataset.value) <= Number(v);
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-checked", btn.dataset.value === v ? "true" : "false");
+  });
+  el.ratingText.textContent = RATING_TEXT[v] || "keine";
+}
+
+function updateRatio() {
+  const dose = toNumber(el.doseG.value);
+  const out  = toNumber(el.yieldG.value);
+  el.ratioHint.textContent = dose && out ? `Verhältnis 1 : ${formatFixed(out / dose, 1)}` : "";
+}
+
+function renderQuickCoffeeButtons() {
+  const top = getTopCoffeeNames().slice(0, 8);
+  const current = normalize(el.coffeeName.value);
+  el.quickCoffeeButtons.innerHTML = top.map(({ name }) => {
+    const rec = findRecommendation(name, el.grinderSelect.value);
+    return `
+      <button type="button" class="quick-chip ${normalize(name) === current ? "selected" : ""}" data-coffee="${escapeHTML(name)}">
+        <strong>${escapeHTML(name)}</strong>
+        <small>${rec ? `Mahlgrad ${formatNumber(rec.best_grind, 1)}` : "noch keine Empfehlung"}</small>
+      </button>`;
+  }).join("");
+}
+
+function selectQuickCoffee(name) {
+  el.coffeeName.value = name;
+  el.coffeeError.textContent = "";
+  const rec = findRecommendation(name, el.grinderSelect.value);
+  if (rec && !el.mahlgrad.value) {
+    applyRecommendation(rec);
+    setMsg(el.formMessage, `Mahlgrad ${formatNumber(rec.best_grind, 1)} aus der Empfehlung vorausgefüllt.`);
+  }
+  updateCurrentRecommendation();
+  renderQuickCoffeeButtons();
+}
 
 function methodDefaultCaffeine(method) {
   const t = normalize(method);
-  if (t.includes("doppel"))   return 120;
+  if (t.includes("doppel")) return 120;
   if (t.includes("espresso")) return 80;
-  if (t.includes("v60"))      return 120;
-  if (t.includes("french"))   return 110;
-  if (t.includes("cold"))     return 150;
+  if (t.includes("v60")) return 120;
+  if (t.includes("french")) return 110;
+  if (t.includes("cold")) return 150;
   return 95;
 }
 
 function readEntryForm() {
   const rawTime = el.entryTime.value || nowTime();
+  const entryDate = el.entryDate.value || todayISO();
+  const entryTime = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
+  const grinderId = el.grinderSelect.value ? Number(el.grinderSelect.value) : null;
   return {
-    entry_date: el.entryDate.value || todayISO(),
-    entry_time: rawTime.length === 5 ? `${rawTime}:00` : rawTime,
-    drink_name: el.coffeeName.value.trim(),
-    drink_type: el.brewMethod.value,
-    emoji:      getMethodIcon(el.brewMethod.value),
-    amount_ml:        toNumber(el.yieldG.value),
-    caffeine_mg:      toNumber(el.caffeineMg.value),
-    dose_g:           toNumber(el.doseG.value),
-    yield_g:          toNumber(el.yieldG.value),
-    mahlgrad:         toNumber(el.mahlgrad.value),
-    extraction_time_s:toNumber(el.extractionTime.value),
-    pressure_bar:     toNumber(el.pressureBar.value),
-    temperature_c:    toNumber(el.temperatureC.value),
-    rating:           toNumber(el.rating.value),
-    note:             el.note.value.trim() || null,
-    machine_id:       el.machineSelect.value ? Number(el.machineSelect.value) : null,
-    grinder_id:       el.grinderSelect.value ? Number(el.grinderSelect.value) : null,
-    grinder_cleaning_id: el.grinderSelect.value
-      ? getLatestCleaningId(Number(el.grinderSelect.value))
-      : null,
+    entry_date:          entryDate,
+    entry_time:          entryTime,
+    drink_name:          el.coffeeName.value.trim(),
+    drink_type:          el.brewMethod.value,
+    emoji:               getMethodIcon(el.brewMethod.value),
+    amount_ml:           toNumber(el.yieldG.value),
+    caffeine_mg:         toNumber(el.caffeineMg.value),
+    dose_g:              toNumber(el.doseG.value),
+    yield_g:             toNumber(el.yieldG.value),
+    mahlgrad:            toNumber(el.mahlgrad.value),
+    extraction_time_s:   toNumber(el.extractionTime.value),
+    pressure_bar:        toNumber(el.pressureBar.value),
+    temperature_c:       toNumber(el.temperatureC.value),
+    rating:              toNumber(el.rating.value),
+    note:                el.note.value.trim() || null,
+    machine_id:          el.machineSelect.value ? Number(el.machineSelect.value) : null,
+    grinder_id:          grinderId,
+    grinder_cleaning_id: getCleaningIdForShot(grinderId, entryDate, entryTime),
   };
 }
 
-function validateEntryForm() {
-  const entry = readEntryForm();
-  el.coffeeError.textContent = el.mahlgradError.textContent = el.formError.textContent = "";
-  let valid = true;
-  if (!entry.drink_name)       { el.coffeeError.textContent   = "Bitte Kaffee oder Bohne eintragen."; valid = false; }
-  if (entry.mahlgrad === null) { el.mahlgradError.textContent = "Bitte Mahlgrad eintragen.";          valid = false; }
-  return valid;
+function validateEntryForm(entry) {
+  el.coffeeError.textContent = "";
+  el.mahlgradError.textContent = "";
+  el.formError.textContent = "";
+  let firstInvalid = null;
+  if (!entry.drink_name) { el.coffeeError.textContent = "Bitte Kaffee oder Bohne eintragen."; firstInvalid = firstInvalid || el.coffeeName; }
+  if (entry.mahlgrad === null) { el.mahlgradError.textContent = "Bitte Mahlgrad eintragen."; firstInvalid = firstInvalid || el.mahlgrad; }
+  if (firstInvalid) {
+    firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+    firstInvalid.focus({ preventScroll: true });
+    return false;
+  }
+  return true;
 }
 
 async function saveEntry(event) {
   event.preventDefault();
-  if (!validateEntryForm()) return;
-  const payload     = readEntryForm();
-  const isEditing   = Boolean(state.editingId);
-  const defaultText = isEditing ? "Änderung speichern" : "Shot speichern ☕";
-  setButtonLoading(el.saveEntryBtn, true, "Speichere ...", defaultText);
+  const payload = readEntryForm();
+  if (!validateEntryForm(payload)) return;
+
+  const isEditing = Boolean(state.editingId);
+  const defaultText = isEditing ? "Änderung speichern" : "Shot speichern";
+  setButtonLoading(el.saveEntryBtn, true, "Speichere …", defaultText);
+
   const response = isEditing
     ? await supabaseClient.from(TABLE_ENTRIES).update(payload).eq("id", state.editingId).select().single()
     : await supabaseClient.from(TABLE_ENTRIES).insert(payload).select().single();
-  setButtonLoading(el.saveEntryBtn, false, "Speichere ...", defaultText);
-  if (response.error) { console.error("Save:", response.error); setFormMessage(`Speichern fehlgeschlagen: ${response.error.message}`, "error"); return; }
+
+  setButtonLoading(el.saveEntryBtn, false, "Speichere …", defaultText);
+
+  if (response.error) {
+    console.error("Save:", response.error);
+    el.formError.textContent = `Speichern fehlgeschlagen: ${response.error.message}`;
+    showToast("Speichern fehlgeschlagen", "error");
+    return;
+  }
+
   await loadEntries();
-  state.recommendations = buildRecommendations(state.entries);
-  const rec = findRecommendation(payload.drink_name, payload.grinder_id);
-  resetForm(); renderAll();
-  showToast(isEditing ? "Shot aktualisiert ☕" : "Shot gespeichert ☕");
-  if (rec) setFormMessage(`Aktuelle Empfehlung für ${payload.drink_name}: Mahlgrad ${formatNumber(rec.best_grind, 1)}.`);
-  openView("recommendations");
+  state.lastLoadedAt = Date.now();
+
+  if (isEditing) {
+    resetForm();
+    renderAll();
+    showToast("Shot aktualisiert");
+    openView("history");
+    return;
+  }
+
+  if (state.shownExtraction) { markExtractionUsed(state.shownExtraction.id); hideExtraction(); }
+  prefillNextShot(payload);
+  renderAll();
+  const rec = findRecommendation(payload.drink_name, payload.grinder_id, payload.drink_type);
+  showToast("Shot gespeichert ☕");
+  setMsg(el.formMessage, rec ? `Gespeichert. Neue Empfehlung für ${payload.drink_name}: Mahlgrad ${grindRangeText(rec)}.` : "Gespeichert.");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* Nach dem Speichern: Bohne & Setup bleiben stehen, Shot-spezifisches wird geleert */
+function prefillNextShot(saved) {
+  state.editingId = null;
+  setEditMode(false);
+  el.entryDate.value = todayISO();
+  el.entryTime.value = nowTime();
+  el.extractionTime.value = "";
+  el.pressureBar.value = "";
+  el.note.value = "";
+  setRating("");
+  el.coffeeName.value = saved.drink_name;
+  el.mahlgrad.value = saved.mahlgrad ?? "";
+  updateRatio();
+}
+
+function setEditMode(on) {
+  el.editBadge.classList.toggle("hidden", !on);
+  el.addTitle.textContent = on ? "Shot bearbeiten" : "Neuer Shot";
+  el.saveEntryBtn.textContent = on ? "Änderung speichern" : "Shot speichern";
+  el.cancelEditBtn.classList.toggle("hidden", !on);
+  el.deleteEntryBtn.classList.toggle("hidden", !on);
+  el.duplicateLastBtn.classList.toggle("hidden", on);
+  el.resetFormBtn.classList.toggle("hidden", on);
+  if (on) hideExtraction();
 }
 
 function resetForm() {
   state.editingId = null;
-  el.entryDate.value = todayISO(); el.entryTime.value = nowTime();
-  el.coffeeName.value = ""; el.brewMethod.value = "Espresso";
-  el.doseG.value = "18"; el.yieldG.value = "36"; el.mahlgrad.value = "";
-  el.extractionTime.value = ""; el.pressureBar.value = ""; el.temperatureC.value = "";
-  el.caffeineMg.value = "80"; el.rating.value = ""; el.note.value = "";
-  el.coffeeError.textContent = el.mahlgradError.textContent = el.formError.textContent = "";
-  setFormMessage("");
-  el.saveEntryBtn.textContent = "Shot speichern ☕";
-  el.cancelEditBtn.classList.add("hidden");
-  el.editBadge.classList.add("hidden");
+  setEditMode(false);
+  el.entryForm.reset();
+  initFormDefaults();
+  el.brewMethod.value = "Espresso";
+  el.coffeeError.textContent = "";
+  el.mahlgradError.textContent = "";
+  el.formError.textContent = "";
+  setMsg(el.formMessage, "");
+  el.entryDetails.open = false;
   renderEquipmentSelects();
   updateCurrentRecommendation();
+  renderQuickCoffeeButtons();
 }
 
-function cancelEdit() { resetForm(); }
+function fillFormFromEntry(entry, { keepDateTime = false } = {}) {
+  el.coffeeName.value     = entry.drink_name || "";
+  el.brewMethod.value     = entry.drink_type || "Espresso";
+  el.machineSelect.value  = entry.machine_id || "";
+  el.grinderSelect.value  = entry.grinder_id || "";
+  el.doseG.value          = entry.dose_g ?? "";
+  el.yieldG.value         = entry.yield_g ?? "";
+  el.mahlgrad.value       = entry.mahlgrad ?? "";
+  el.pressureBar.value    = entry.pressure_bar ?? "";
+  el.temperatureC.value   = entry.temperature_c ?? "";
+  el.caffeineMg.value     = entry.caffeine_mg ?? methodDefaultCaffeine(el.brewMethod.value);
+  if (keepDateTime) {
+    el.entryDate.value = entry.entry_date || todayISO();
+    el.entryTime.value = formatEntryTime(entry.entry_time);
+  }
+  updateRatio();
+}
 
 function startEdit(entry) {
   state.editingId = entry.id;
-  el.entryDate.value     = entry.entry_date || todayISO();
-  el.entryTime.value     = formatEntryTime(entry.entry_time);
-  el.coffeeName.value    = entry.drink_name || "";
-  el.brewMethod.value    = entry.drink_type || "Espresso";
-  el.machineSelect.value = entry.machine_id || "";
-  el.grinderSelect.value = entry.grinder_id || "";
-  el.doseG.value         = entry.dose_g ?? "18";
-  el.yieldG.value        = entry.yield_g ?? "36";
-  el.mahlgrad.value      = entry.mahlgrad ?? "";
-  el.extractionTime.value= entry.extraction_time_s ?? "";
-  el.pressureBar.value   = entry.pressure_bar ?? "";
-  el.temperatureC.value  = entry.temperature_c ?? "";
-  el.caffeineMg.value    = entry.caffeine_mg ?? "80";
-  el.rating.value        = entry.rating ?? "";
-  el.note.value          = entry.note || "";
-  el.saveEntryBtn.textContent = "Änderung speichern";
-  el.cancelEditBtn.classList.remove("hidden");
-  el.editBadge.classList.remove("hidden");
-  setFormMessage("Du bearbeitest gerade einen bestehenden Shot.");
+  fillFormFromEntry(entry, { keepDateTime: true });
+  el.extractionTime.value = entry.extraction_time_s ?? "";
+  el.note.value = entry.note || "";
+  setRating(entry.rating ?? "");
+  setEditMode(true);
+  el.entryDetails.open = true;
+  setMsg(el.formMessage, "");
   updateCurrentRecommendation();
+  renderQuickCoffeeButtons();
   openView("add");
 }
 
 function duplicateLastShot() {
   const last = state.entries[0];
-  if (!last) { showToast("Noch kein Shot zum Duplizieren vorhanden."); return; }
+  if (!last) { showToast("Noch kein Shot vorhanden"); return; }
   state.editingId = null;
-  el.entryDate.value = todayISO(); el.entryTime.value = nowTime();
-  el.coffeeName.value    = last.drink_name || "";
-  el.brewMethod.value    = last.drink_type || "Espresso";
-  el.machineSelect.value = last.machine_id || "";
-  el.grinderSelect.value = last.grinder_id || "";
-  el.doseG.value         = last.dose_g ?? "18";
-  el.yieldG.value        = last.yield_g ?? "36";
-  el.mahlgrad.value      = last.mahlgrad ?? "";
-  el.extractionTime.value= "";
-  el.pressureBar.value   = last.pressure_bar ?? "";
-  el.temperatureC.value  = last.temperature_c ?? "";
-  el.caffeineMg.value    = last.caffeine_mg ?? "80";
-  el.rating.value        = ""; el.note.value = "";
-  setFormMessage("Letzter Shot wurde als Vorlage übernommen.");
+  fillFormFromEntry(last);
+  el.entryDate.value = todayISO();
+  el.entryTime.value = nowTime();
+  el.extractionTime.value = "";
+  el.note.value = "";
+  setRating("");
+  setMsg(el.formMessage, `Werte vom letzten Shot (${last.drink_name}) übernommen.`);
   updateCurrentRecommendation();
+  renderQuickCoffeeButtons();
+}
+
+async function deleteEditedEntry() {
+  if (!state.editingId) return;
+  const ok = await deleteEntry(state.editingId);
+  if (ok) { resetForm(); openView("history"); }
 }
 
 
 /* ============================================================
-   History
+   Verlauf
    ============================================================ */
 
 function getFilteredEntries() {
-  return state.entries.filter(e => {
-    const dateOk   = !state.filters.date   || e.entry_date === state.filters.date;
-    const coffeeOk = !state.filters.coffee || e.drink_name === state.filters.coffee;
-    return dateOk && coffeeOk;
-  });
+  return state.entries.filter((e) =>
+    (!state.filters.date || e.entry_date === state.filters.date) &&
+    (!state.filters.coffee || e.drink_name === state.filters.coffee));
 }
 
+function scoreClass(score) { return score >= 80 ? "good" : score >= 60 ? "mid" : "bad"; }
+
 function renderEntries() {
-  const entries = getFilteredEntries();
-  el.entriesCount.textContent = `${entries.length} Shots`;
-  el.entriesList.innerHTML    = "";
-  if (!entries.length) { el.entriesList.innerHTML = `<div class="empty">Noch keine passenden Shots vorhanden.</div>`; return; }
+  const all = getFilteredEntries();
+  const entries = all.slice(0, state.historyLimit);
+  const filtered = Boolean(state.filters.date || state.filters.coffee);
+
+  el.entriesCount.textContent = `${all.length} ${all.length === 1 ? "Shot" : "Shots"}`;
+  el.clearFiltersBtn.classList.toggle("hidden", !filtered);
+  el.loadMoreBtn.classList.toggle("hidden", all.length <= entries.length);
+
+  if (!entries.length) {
+    el.entriesList.innerHTML = `<div class="empty">${filtered ? "Keine Shots für diesen Filter." : "Noch keine Shots. Trag im Shot-Tab deinen ersten ein."}</div>`;
+    return;
+  }
 
   const groups = new Map();
-  entries.forEach(e => { if (!groups.has(e.entry_date)) groups.set(e.entry_date, []); groups.get(e.entry_date).push(e); });
+  entries.forEach((e) => {
+    if (!groups.has(e.entry_date)) groups.set(e.entry_date, []);
+    groups.get(e.entry_date).push(e);
+  });
 
+  const showGrinderChip = state.equipment.filter(isGrinder).length > 1;
+  el.entriesList.innerHTML = "";
   groups.forEach((dayEntries, day) => {
     const group = document.createElement("section");
     group.className = "day-group";
-    group.innerHTML = `<div class="day-head"><h3>${escapeHTML(formatDateHeader(day))}</h3><span>${dayEntries.length} Shots</span></div>`;
-    dayEntries.forEach(entry => {
+    group.innerHTML = `<div class="day-head"><h3>${escapeHTML(formatDateHeader(day))}</h3><span>${dayEntries.length}</span></div>`;
+
+    dayEntries.forEach((entry) => {
       const score = scoreShot(entry);
-      const card  = document.createElement("article");
-      card.className = `entry-card compact ${scoreClass(score)}`; card.tabIndex = 0;
+      const inTarget = isShotInTarget(entry);
+      let cleanFlag = "";
+      if (entry.grinder_id && getLastCleaning(entry.grinder_id, "gross")) {
+        cleanFlag = isShotAfterLastBigCleaning(entry)
+          ? `<span class="fresh">nach Reinigung</span>`
+          : `<span class="old">vor Reinigung</span>`;
+      }
+
+      const card = document.createElement("article");
+      card.className = `item-card ${scoreClass(score)}`;
+      card.tabIndex = 0;
       card.innerHTML = `
-        <div class="swipe-hint left">✏️ Bearbeiten</div>
-        <div class="swipe-hint right">🗑️ Löschen</div>
-        <div class="entry-main">
-          <div class="entry-icon">${escapeHTML(getMethodIcon(entry.drink_type))}</div>
-          <div class="entry-content">
-            <div class="entry-title-row"><strong>${escapeHTML(entry.drink_name)}</strong><span>${escapeHTML(formatEntryTime(entry.entry_time))}</span></div>
-            <div class="entry-meta">
-              <span>MG ${formatNumber(entry.mahlgrad, 1)}</span>
-              <span>${formatNumber(entry.extraction_time_s, 1)}s · ${formatNumber(entry.pressure_bar, 1)} bar</span>
-              <span>⭐ ${entry.rating || "–"}</span>
+        <div class="swipe-hint">Löschen</div>
+        <div class="swipe-inner">
+          <div class="item-main">
+            <div class="item-icon">${getMethodIcon(entry.drink_type)}</div>
+            <div class="item-content">
+              <div class="item-title">
+                <strong>${escapeHTML(entry.drink_name)}</strong>
+                <span>${escapeHTML(formatEntryTime(entry.entry_time))}</span>
+              </div>
+              <div class="meta">
+                <span class="strong">MG ${formatNumber(entry.mahlgrad, 1)}</span>
+                ${toNumber(entry.extraction_time_s) !== null ? `<span class="${inTarget ? "fresh" : ""}">⏱️ ${formatNumber(entry.extraction_time_s, 1)} s</span>` : ""}
+                ${entry.dose_g || entry.yield_g ? `<span>${formatNumber(entry.dose_g, 1)} → ${formatNumber(entry.yield_g, 1)} g</span>` : ""}
+                ${entry.rating ? `<span>${"★".repeat(Number(entry.rating))}</span>` : ""}
+              </div>
+              <div class="meta">
+                ${entry.grinder_id && showGrinderChip ? `<span>${escapeHTML(equipmentName(entry.grinder_id))}</span>` : ""}
+                ${methodGroup(entry.drink_type) !== "espresso" ? `<span>${escapeHTML(entry.drink_type)}</span>` : ""}
+                ${entry.pressure_bar !== null && entry.pressure_bar !== undefined ? `<span>${formatNumber(entry.pressure_bar, 1)} bar</span>` : ""}
+                <span>Score ${score}</span>
+                ${cleanFlag}
+              </div>
+              ${entry.note ? `<p class="item-note">${escapeHTML(entry.note)}</p>` : ""}
             </div>
-            <p class="entry-line muted">${formatNumber(entry.dose_g, 1)}→${formatNumber(entry.yield_g, 1)}g · ${escapeHTML(equipmentName(entry.grinder_id))} · ${escapeHTML(entry.drink_type || "Espresso")} · Score ${score}${
-              entry.grinder_id && !isShotAfterLastBigCleaning(entry)
-                ? ` · <span class="cleaning-flag-old">vor letzter Reinigung</span>`
-                : entry.grinder_cleaning_id
-                  ? ` · <span class="cleaning-flag-fresh">🧽 nach Reinigung</span>`
-                  : ""
-            }</p>
-            ${entry.note ? `<p class="entry-note">${escapeHTML(entry.note)}</p>` : ""}
           </div>
-        </div>
-        <button class="delete-entry" type="button" aria-label="Shot löschen">×</button>`;
-      card.addEventListener("click",   () => { if (card.dataset.swiped !== "true") startEdit(entry); });
-      card.addEventListener("keydown", e => { if (e.key === "Enter") startEdit(entry); });
-      card.querySelector(".delete-entry").addEventListener("click", async e => { e.stopPropagation(); await deleteEntry(entry.id); });
-      enableSwipeActions(card, entry);
+        </div>`;
+
+      card.addEventListener("click", () => { if (card.dataset.swiped !== "true") startEdit(entry); });
+      card.addEventListener("keydown", (e) => { if (e.key === "Enter") startEdit(entry); });
+      enableSwipeToDelete(card, () => deleteEntry(entry.id));
       group.appendChild(card);
     });
+
     el.entriesList.appendChild(group);
   });
 }
 
-function scoreClass(score) { return score >= 80 ? "rating-good" : score >= 60 ? "rating-mid" : "rating-bad"; }
+function enableSwipeToDelete(card, onDelete) {
+  const inner = card.querySelector(".swipe-inner");
+  let startX = 0, startY = 0, dx = 0, active = false, axis = null;
 
-function enableSwipeActions(card, entry) {
-  let startX = 0, currentX = 0, dragging = false;
-  card.addEventListener("pointerdown", e => {
+  const reset = () => {
+    active = false;
+    card.classList.remove("dragging", "swiping-delete");
+    inner.style.transform = "";
+    setTimeout(() => { card.dataset.swiped = "false"; }, 60);
+  };
+
+  card.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse") return;
-    startX = currentX = e.clientX; dragging = true; card.dataset.swiped = "false"; card.setPointerCapture(e.pointerId);
+    startX = e.clientX; startY = e.clientY; dx = 0; axis = null; active = true;
   });
-  card.addEventListener("pointermove", e => {
-    if (!dragging) return;
-    currentX = e.clientX; const dx = currentX - startX;
-    if (Math.abs(dx) > 8) {
-      card.style.transform = `translateX(${Math.max(Math.min(dx, 90), -90)}px)`;
-      card.classList.toggle("swiping-edit",   dx >  30);
-      card.classList.toggle("swiping-delete", dx < -30);
-    }
+
+  card.addEventListener("pointermove", (e) => {
+    if (!active) return;
+    const mx = e.clientX - startX;
+    const my = e.clientY - startY;
+    if (axis === null && (Math.abs(mx) > 10 || Math.abs(my) > 10)) axis = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+    if (axis !== "x") return;
+    dx = Math.max(Math.min(mx, 0), -130);
+    card.dataset.swiped = "true";
+    card.classList.add("dragging");
+    card.classList.toggle("swiping-delete", dx < -50);
+    inner.style.transform = `translateX(${dx}px)`;
   });
+
   card.addEventListener("pointerup", async () => {
-    if (!dragging) return;
-    dragging = false; const dx = currentX - startX;
-    card.style.transform = ""; card.classList.remove("swiping-edit", "swiping-delete");
-    if (dx >  82) { card.dataset.swiped = "true"; startEdit(entry);         return; }
-    if (dx < -82) { card.dataset.swiped = "true"; await deleteEntry(entry.id); return; }
-    setTimeout(() => { card.dataset.swiped = "false"; }, 80);
+    if (!active) return;
+    const trigger = axis === "x" && dx < -100;
+    reset();
+    if (trigger) await onDelete();
   });
+
+  card.addEventListener("pointercancel", reset);
 }
 
 async function deleteEntry(id) {
-  if (!window.confirm("Diesen Shot wirklich löschen?")) return;
+  if (!confirm("Diesen Shot wirklich löschen?")) return false;
   const { error } = await supabaseClient.from(TABLE_ENTRIES).delete().eq("id", id);
-  if (error) { console.error(error); showToast("Löschen fehlgeschlagen."); return; }
-  showToast("Shot gelöscht."); await loadEntries(); renderAll();
+  if (error) { console.error(error); showToast("Löschen fehlgeschlagen", "error"); return false; }
+  await loadEntries();
+  renderAll();
+  showToast("Shot gelöscht");
+  return true;
 }
 
 async function deleteAllEntries() {
-  if (!window.confirm("Wirklich ALLE Shots löschen?")) return;
-  if (window.prompt('Zur Sicherheit bitte "ALLE LÖSCHEN" eingeben:') !== "ALLE LÖSCHEN") { showToast("Löschen abgebrochen."); return; }
+  if (!confirm("Wirklich ALLE Shots löschen? Das kann nicht rückgängig gemacht werden.")) return;
+  if (prompt('Zur Sicherheit bitte "ALLE LÖSCHEN" eingeben:') !== "ALLE LÖSCHEN") { showToast("Abgebrochen"); return; }
   const { error } = await supabaseClient.from(TABLE_ENTRIES).delete().neq("id", 0);
-  if (error) { console.error(error); showToast("Löschen fehlgeschlagen."); return; }
-  showToast("Alle Shots gelöscht."); await loadEntries(); renderAll();
+  if (error) { console.error(error); showToast("Löschen fehlgeschlagen", "error"); return; }
+  await loadEntries();
+  renderAll();
+  showToast("Alle Shots gelöscht");
 }
 
 
 /* ============================================================
-   Dashboard
+   Stats
    ============================================================ */
 
 function renderDashboard() {
-  const today        = todayISO();
-  const todayEntries = state.entries.filter(e => e.entry_date === today);
-  const todayCaff    = sumCaffeine(todayEntries);
-  const limit        = Number(state.settings.caffeine_limit_mg) || 400;
+  const s = state.settings;
+  const todayEntries = state.entries.filter((e) => e.entry_date === todayISO());
+  const todayCaff = sumCaffeine(todayEntries);
+  const limit = Number(s.caffeine_limit_mg) || 400;
 
-  el.todayCount.textContent    = String(todayEntries.length);
+  el.todayCount.textContent = String(todayEntries.length);
   el.todayCaffeine.textContent = `${formatNumber(todayCaff)} mg`;
-  el.limitText.textContent     = `Limit: ${formatNumber(limit)} mg`;
+  el.limitText.textContent = `Limit ${formatNumber(limit)} mg`;
 
-  const times   = state.entries.map(e => Number(e.extraction_time_s)).filter(Number.isFinite);
-  const avgTime = times.length ? times.reduce((a,b) => a+b, 0) / times.length : null;
-  el.avgTime.textContent = avgTime === null ? "–" : `${formatNumber(avgTime, 1)}s`;
+  const recent = sortedByTime(state.entries.filter((e) => toNumber(e.extraction_time_s) !== null)).slice(-STATS_WINDOW);
+  const times = recent.map((e) => Number(e.extraction_time_s));
+  const avgTime = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
+  el.avgTime.textContent = avgTime === null ? "–" : `${formatNumber(avgTime, 1)} s`;
+  el.avgTimeSub.textContent = `Ziel ${formatNumber(s.target_time_min_s, 1)}–${formatNumber(s.target_time_max_s, 1)} s`;
+  el.hitRate.textContent = recent.length ? `${formatNumber((recent.filter(isShotInTarget).length / recent.length) * 100)} %` : "–";
 
-  const tShots = state.entries.filter(e => Number.isFinite(Number(e.extraction_time_s)));
-  const hits   = tShots.filter(isShotInTarget).length;
-  el.hitRate.textContent = tShots.length ? `${formatNumber((hits / tShots.length) * 100)}%` : "–";
+  el.overLimitHint.classList.toggle("hidden", todayCaff <= limit);
+  if (todayCaff > limit) el.overLimitHint.textContent = `Tageslimit überschritten: ${formatNumber(todayCaff)} von ${formatNumber(limit)} mg Koffein.`;
 
-  if (todayCaff > limit) {
-    el.overLimitHint.textContent = `Tageslimit überschritten: ${formatNumber(todayCaff)} mg von ${formatNumber(limit)} mg.`;
-    el.overLimitHint.classList.remove("hidden");
-  } else {
-    el.overLimitHint.classList.add("hidden");
-  }
-
-  renderShellyPanel();
   renderWeekCanvas();
   renderTrendCanvas();
   renderCoffeeRanking();
@@ -1123,122 +1526,391 @@ function renderDashboard() {
 }
 
 function renderWeekCanvas() {
-  const days    = getLastNDays(7);
-  const values  = days.map(d => sumCaffeine(state.entries.filter(e => e.entry_date === d)));
-  const average = values.reduce((a,b) => a+b, 0) / 7;
-  const prev    = getPreviousNDays(7, 7);
-  const prevTot = prev.reduce((s,d) => s + sumCaffeine(state.entries.filter(e => e.entry_date === d)), 0);
-  const curTot  = values.reduce((a,b) => a+b, 0);
-  if (prevTot > 0) {
-    const diff = ((curTot - prevTot) / prevTot) * 100;
-    el.weekCompare.textContent = `${diff >= 0 ? "+" : ""}${formatNumber(diff)}% zur Vorwoche`;
-  } else {
-    el.weekCompare.textContent = "Keine Vorwoche";
-  }
-  const labels = days.map(d => new Date(`${d}T00:00:00`).toLocaleDateString("de-DE", { weekday: "short" }));
-  drawBarWithAverage(el.weekCanvas, labels, values, average, "mg");
+  const days = getLastNDays(7);
+  const values = days.map((d) => sumCaffeine(state.entries.filter((e) => e.entry_date === d)));
+  const average = values.reduce((a, b) => a + b, 0) / 7;
+  const prevTotal = getLastNDays(7, 7).reduce((s, d) => s + sumCaffeine(state.entries.filter((e) => e.entry_date === d)), 0);
+  const curTotal = values.reduce((a, b) => a + b, 0);
+
+  el.weekCompare.textContent = prevTotal > 0
+    ? `${curTotal >= prevTotal ? "+" : ""}${formatNumber(((curTotal - prevTotal) / prevTotal) * 100)} % zur Vorwoche`
+    : "Keine Vorwoche";
+
+  const labels = days.map((d) => new Date(`${d}T00:00:00`).toLocaleDateString("de-DE", { weekday: "short" }).replace(".", ""));
+  drawBarChart(el.weekCanvas, labels, values, average);
 }
 
 function renderTrendCanvas() {
-  const shots  = [...state.entries].filter(e => Number.isFinite(Number(e.extraction_time_s)))
-    .sort((a,b) => (`${a.entry_date} ${a.entry_time}`).localeCompare(`${b.entry_date} ${b.entry_time}`)).slice(-30);
-  const values = shots.map(e => Number(e.extraction_time_s));
-  const labels = shots.map((_,i) => String(i+1));
+  const shots = sortedByTime(state.entries.filter((e) => toNumber(e.extraction_time_s) !== null)).slice(-30);
+  const values = shots.map((e) => Number(e.extraction_time_s));
+
   if (values.length >= 4) {
-    const mid  = Math.floor(values.length / 2);
-    const f    = values.slice(0, mid).reduce((a,b) => a+b, 0) / mid;
-    const s    = values.slice(mid).reduce((a,b) => a+b, 0) / (values.length - mid);
-    el.trendBadge.textContent = s > f + 2 ? "langsamer" : s < f - 2 ? "schneller" : "stabil";
-  } else { el.trendBadge.textContent = "zu wenig Daten"; }
-  drawLineChart(el.trendCanvas, labels, values, "s");
+    const mid = Math.floor(values.length / 2);
+    const first = values.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+    const second = values.slice(mid).reduce((a, b) => a + b, 0) / (values.length - mid);
+    el.trendBadge.textContent = second > first + 2 ? "wird langsamer" : second < first - 2 ? "wird schneller" : "stabil";
+  } else {
+    el.trendBadge.textContent = "zu wenig Daten";
+  }
+  drawTrendChart(el.trendCanvas, values);
 }
 
 function renderCoffeeRanking() {
-  el.coffeeRanking.innerHTML = "";
   const top = getTopCoffeeNames().slice(0, 6);
-  if (!top.length) { el.coffeeRanking.innerHTML = `<div class="empty compact">Noch keine Daten.</div>`; return; }
-  const max = Math.max(...top.map(i => i.count));
-  top.forEach(({ name, count }, index) => {
-    const row = document.createElement("div"); row.className = "rank-row";
-    row.innerHTML = `<span class="rank-number">${index + 1}</span><div><strong>${escapeHTML(name)}</strong><div class="mini-track"><div class="mini-fill" style="width:${(count/max)*100}%"></div></div></div><span>${count}x</span>`;
-    el.coffeeRanking.appendChild(row);
-  });
+  if (!top.length) { el.coffeeRanking.innerHTML = `<div class="empty">Noch keine Daten.</div>`; return; }
+  const max = top[0].count;
+  el.coffeeRanking.innerHTML = top.map(({ name, count }, i) => `
+    <div class="rank-row">
+      <span class="rank-number">${i + 1}</span>
+      <div>
+        <strong>${escapeHTML(name)}</strong>
+        <div class="mini-track"><div class="mini-fill" style="width:${(count / max) * 100}%"></div></div>
+      </div>
+      <span>${count}×</span>
+    </div>`).join("");
 }
 
 function renderTopShots() {
-  el.topShots.innerHTML = "";
-  const shots = [...state.entries].filter(e => e.mahlgrad !== null && e.mahlgrad !== undefined)
-    .sort((a,b) => scoreShot(b) - scoreShot(a)).slice(0, 5);
-  if (!shots.length) { el.topShots.innerHTML = `<div class="empty compact">Noch keine Shots mit Score.</div>`; return; }
-  shots.forEach((entry, index) => {
-    const row = document.createElement("div"); row.className = "rank-row";
-    row.innerHTML = `<span class="rank-number">${index + 1}</span><div><strong>${escapeHTML(entry.drink_name)}</strong><small>MG ${formatNumber(entry.mahlgrad, 1)} · ${formatNumber(entry.extraction_time_s, 1)}s · ${entry.rating || "–"}/5</small></div><span>Score ${scoreShot(entry)}</span>`;
-    el.topShots.appendChild(row);
-  });
+  const shots = state.entries.filter((e) => toNumber(e.mahlgrad) !== null)
+    .map((e) => ({ e, score: scoreShot(e) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+  if (!shots.length) { el.topShots.innerHTML = `<div class="empty">Noch keine Shots.</div>`; return; }
+  el.topShots.innerHTML = shots.map(({ e, score }, i) => `
+    <div class="rank-row">
+      <span class="rank-number">${i + 1}</span>
+      <div>
+        <strong>${escapeHTML(e.drink_name)}</strong>
+        <small>MG ${formatNumber(e.mahlgrad, 1)}, ${formatNumber(e.extraction_time_s, 1)} s, ${formatDateShort(e.entry_date)}</small>
+      </div>
+      <span>${score}</span>
+    </div>`).join("");
 }
 
 function renderMethodDistribution() {
   const map = new Map();
-  state.entries.forEach(e => { const m = e.drink_type || "Espresso"; map.set(m, (map.get(m) || 0) + 1); });
-  const items = Array.from(map.entries()).sort((a,b) => b[1] - a[1]);
+  state.entries.forEach((e) => { const m = e.drink_type || "Espresso"; map.set(m, (map.get(m) || 0) + 1); });
+  const items = Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   drawDonut(el.methodCanvas, items);
-  el.methodBars.innerHTML = "";
-  if (!items.length) { el.methodBars.innerHTML = `<div class="empty compact">Noch keine Methoden-Daten.</div>`; return; }
-  const max = Math.max(...items.map(i => i[1]));
-  items.slice(0, 6).forEach(([method, count]) => {
-    const row = document.createElement("div"); row.className = "method-row";
-    row.innerHTML = `<span>${escapeHTML(getMethodIcon(method))}</span><strong>${escapeHTML(method)}</strong><div class="mini-track"><div class="mini-fill" style="width:${(count/max)*100}%"></div></div><small>${count}x</small>`;
-    el.methodBars.appendChild(row);
-  });
+  if (!items.length) { el.methodBars.innerHTML = ""; return; }
+  const max = items[0][1];
+  el.methodBars.innerHTML = items.slice(0, 6).map(([method, count], i) => `
+    <div class="rank-row">
+      <span class="rank-number" style="background:${DONUT_COLORS[i % DONUT_COLORS.length]}">${getMethodIcon(method)}</span>
+      <div>
+        <strong>${escapeHTML(method)}</strong>
+        <div class="mini-track"><div class="mini-fill" style="width:${(count / max) * 100}%"></div></div>
+      </div>
+      <span>${count}×</span>
+    </div>`).join("");
 }
 
 function renderHeatmap() {
-  el.heatmap.innerHTML = "";
-  const hours    = Array.from({ length: 19 }, (_, i) => i + 5);
+  const hours = Array.from({ length: 17 }, (_, i) => i + 6); // 6–22 Uhr
   const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-  const matrix   = new Map();
-  state.entries.forEach(e => {
-    const d = new Date(`${e.entry_date}T00:00:00`);
-    const wd = (d.getDay() + 6) % 7;
-    const h  = Number(String(e.entry_time || "00:00").slice(0, 2));
-    if (h >= 5 && h <= 23) { const k = `${wd}-${h}`; matrix.set(k, (matrix.get(k) || 0) + 1); }
-  });
-  const max = Math.max(1, ...matrix.values());
-  const top = Array.from(matrix.entries()).sort((a,b) => b[1] - a[1])[0];
-  if (top) {
-    const [k] = top; const [wd, h] = k.split("-").map(Number);
-    el.peakHour.textContent = `${weekdays[wd]} ${String(h).padStart(2,"0")}:00`;
-  } else { el.peakHour.textContent = "–"; }
+  const matrix = new Map();
 
-  const tl = document.createElement("div"); tl.className = "heatmap-label"; el.heatmap.appendChild(tl);
-  hours.forEach(h => { const c = document.createElement("div"); c.className = "heatmap-label hour-label"; c.textContent = String(h); el.heatmap.appendChild(c); });
-  weekdays.forEach((wdLabel, wdIdx) => {
-    const label = document.createElement("div"); label.className = "heatmap-label"; label.textContent = wdLabel; el.heatmap.appendChild(label);
-    hours.forEach(h => {
-      const count = matrix.get(`${wdIdx}-${h}`) || 0;
-      const cell  = document.createElement("div"); cell.className = "heatmap-cell";
-      cell.title  = `${wdLabel} ${h}:00 – ${count} Shots`;
-      cell.style.opacity = count ? String(0.22 + (count / max) * 0.78) : "0.1";
-      el.heatmap.appendChild(cell);
+  state.entries.forEach((e) => {
+    const wd = (new Date(`${e.entry_date}T00:00:00`).getDay() + 6) % 7;
+    const h = Number(String(e.entry_time || "00").slice(0, 2));
+    if (h >= 6 && h <= 22) matrix.set(`${wd}-${h}`, (matrix.get(`${wd}-${h}`) || 0) + 1);
+  });
+
+  const max = Math.max(1, ...matrix.values());
+  const top = Array.from(matrix.entries()).sort((a, b) => b[1] - a[1])[0];
+  if (top) {
+    const [wd, h] = top[0].split("-").map(Number);
+    el.peakHour.textContent = `meist ${weekdays[wd]} ${pad(h)} Uhr`;
+  } else {
+    el.peakHour.textContent = "–";
+  }
+
+  let html = `<div class="heatmap-label"></div>` + hours.map((h) => `<div class="heatmap-label">${h % 3 === 0 ? h : ""}</div>`).join("");
+  weekdays.forEach((label, wd) => {
+    html += `<div class="heatmap-label">${label}</div>`;
+    hours.forEach((h) => {
+      const count = matrix.get(`${wd}-${h}`) || 0;
+      html += count
+        ? `<div class="heatmap-cell" style="opacity:${(0.25 + (count / max) * 0.75).toFixed(2)}" title="${label} ${h} Uhr: ${count} Shots"></div>`
+        : `<div class="heatmap-cell empty-cell"></div>`;
     });
   });
+  el.heatmap.innerHTML = html;
 }
 
 
 /* ============================================================
-   Equipment
+   Charts (Canvas)
+   ============================================================ */
+
+const DONUT_COLORS = ["#ffcf8a", "#d4a574", "#b8753a", "#8b4513", "#f0b36e", "#6a3514"];
+const CHART_TEXT = "rgba(245,239,232,0.62)";
+const CHART_GRID = "rgba(245,239,232,0.1)";
+
+function setupCanvas(canvas) {
+  if (!canvas) return null;
+  const width = canvas.clientWidth || canvas.parentElement.clientWidth || 320;
+  const height = Number(canvas.dataset.h) || 200;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.style.height = `${height}px`;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.font = "11px system-ui, sans-serif";
+  return { ctx, width, height };
+}
+
+function drawEmpty(ctx, width, height) {
+  ctx.fillStyle = CHART_TEXT;
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Noch keine Daten", width / 2, height / 2);
+}
+
+function drawBarChart(canvas, labels, values, average) {
+  const s = setupCanvas(canvas); if (!s) return;
+  const { ctx, width, height } = s;
+  if (values.every((v) => !v)) { drawEmpty(ctx, width, height); return; }
+
+  const padX = 12, top = 22, bottom = 24;
+  const chartW = width - padX * 2, chartH = height - top - bottom;
+  const max = Math.max(average, ...values, 1) * 1.15;
+  const gap = 8;
+  const barW = (chartW - gap * (values.length - 1)) / values.length;
+
+  values.forEach((v, i) => {
+    const x = padX + i * (barW + gap);
+    const h = (v / max) * chartH;
+    const y = top + chartH - h;
+    const grd = ctx.createLinearGradient(0, y, 0, y + h);
+    grd.addColorStop(0, "#ffcf8a");
+    grd.addColorStop(1, "#8b4513");
+    ctx.fillStyle = v ? grd : CHART_GRID;
+    roundRect(ctx, x, v ? y : top + chartH - 3, barW, v ? Math.max(h, 3) : 3, 6);
+    ctx.fill();
+
+    ctx.fillStyle = CHART_TEXT;
+    ctx.textAlign = "center";
+    ctx.fillText(labels[i], x + barW / 2, height - 7);
+    if (v) ctx.fillText(formatNumber(v), x + barW / 2, y - 6);
+  });
+
+  const avgY = top + chartH - (average / max) * chartH;
+  ctx.strokeStyle = "rgba(245,239,232,0.55)";
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(padX, avgY); ctx.lineTo(width - padX, avgY); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawTrendChart(canvas, values) {
+  const s = setupCanvas(canvas); if (!s) return;
+  const { ctx, width, height } = s;
+  if (!values.length) { drawEmpty(ctx, width, height); return; }
+
+  const minT = Number(state.settings.target_time_min_s);
+  const maxT = Number(state.settings.target_time_max_s);
+  const left = 30, right = 10, top = 12, bottom = 16;
+  const chartW = width - left - right, chartH = height - top - bottom;
+  const yMax = Math.ceil(Math.max(...values, maxT) * 1.15 / 5) * 5;
+  const yMin = Math.max(0, Math.floor(Math.min(...values, minT) * 0.8 / 5) * 5);
+  const yFor = (v) => top + chartH - ((v - yMin) / (yMax - yMin || 1)) * chartH;
+  const xFor = (i) => left + (values.length === 1 ? chartW / 2 : (chartW * i) / (values.length - 1));
+
+  // Zielbereich
+  ctx.fillStyle = "rgba(125,220,156,0.1)";
+  ctx.fillRect(left, yFor(maxT), chartW, yFor(minT) - yFor(maxT));
+
+  // Achsenbeschriftung
+  ctx.fillStyle = CHART_TEXT;
+  ctx.textAlign = "right";
+  [yMin, minT, maxT, yMax].forEach((v) => ctx.fillText(formatNumber(v), left - 6, yFor(v) + 4));
+
+  // Linie
+  ctx.strokeStyle = "#ffcf8a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  values.forEach((v, i) => (i ? ctx.lineTo(xFor(i), yFor(v)) : ctx.moveTo(xFor(i), yFor(v))));
+  ctx.stroke();
+
+  // Punkte: grün im Ziel, rot außerhalb
+  values.forEach((v, i) => {
+    ctx.fillStyle = v >= minT && v <= maxT ? "#7ddc9c" : "#ff7066";
+    ctx.beginPath(); ctx.arc(xFor(i), yFor(v), 3.5, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+function drawDonut(canvas, items) {
+  const s = setupCanvas(canvas); if (!s) return;
+  const { ctx, width, height } = s;
+  if (!items.length) { drawEmpty(ctx, width, height); return; }
+
+  const total = items.reduce((sum, i) => sum + i[1], 0);
+  const cx = width / 2, cy = height / 2;
+  const radius = Math.min(width, height) * 0.36;
+  let start = -Math.PI / 2;
+
+  ctx.lineWidth = 22;
+  items.forEach((item, i) => {
+    const angle = (item[1] / total) * Math.PI * 2;
+    ctx.strokeStyle = DONUT_COLORS[i % DONUT_COLORS.length];
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, start + 0.02, start + angle - 0.02);
+    ctx.stroke();
+    start += angle;
+  });
+
+  ctx.fillStyle = "#f5efe8";
+  ctx.font = "800 22px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(String(total), cx, cy + 4);
+  ctx.fillStyle = CHART_TEXT;
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.fillText("Shots", cx, cy + 20);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+
+/* ============================================================
+   Reinigung
+   ============================================================ */
+
+function cleaningStatusClass(days, type) {
+  const t = CLEANING_THRESHOLDS[type];
+  if (!Number.isFinite(days) || days > t.warn) return "is-late";
+  if (days > t.ok) return "is-due";
+  return "is-ok";
+}
+
+function renderCleaningEquipmentSelect() {
+  const cur = el.cleaningEquipment.value;
+  const items = state.equipment.filter((i) => isMachine(i) || isGrinder(i));
+  el.cleaningEquipment.innerHTML = `<option value="">Bitte wählen …</option>` +
+    items.map((i) => `<option value="${i.id}">${getEquipmentIcon(i.category)} ${escapeHTML(equipmentLabel(i))}</option>`).join("");
+  el.cleaningEquipment.value = cur;
+}
+
+function renderCleaning() {
+  const items = state.equipment.filter((i) => i.is_active && (isMachine(i) || isGrinder(i)));
+  el.cleaningCount.textContent = String(state.cleaningLogs.length);
+  el.cleaningHistorySummary.textContent = `Verlauf (${state.cleaningLogs.length})`;
+
+  el.cleaningStatus.innerHTML = items.length
+    ? items.map((item) => {
+        const buttons = ["klein", "gross"].map((type) => {
+          const last = getLastCleaning(item.id, type);
+          const days = last ? daysSince(last.cleaned_at) : Infinity;
+          return `
+            <button type="button" class="clean-btn ${cleaningStatusClass(days, type)}" data-clean="${type}" data-id="${item.id}">
+              <b>${type === "klein" ? "Klein" : "Groß"}</b>
+              <small>${daysText(days)}</small>
+            </button>`;
+        }).join("");
+        return `
+          <div class="clean-row">
+            <strong>${getEquipmentIcon(item.category)} ${escapeHTML(equipmentLabel(item))}</strong>
+            <div class="clean-buttons">${buttons}</div>
+          </div>`;
+      }).join("")
+    : `<div class="empty">Lege unten eine Maschine oder Mühle an, um Reinigungen zu protokollieren.</div>`;
+
+  el.cleaningList.innerHTML = state.cleaningLogs.length
+    ? state.cleaningLogs.slice(0, 40).map((log) => {
+        const item = getEquipmentById(log.equipment_id);
+        return `
+          <div class="clean-item">
+            <div>
+              <strong>${log.cleaning_type === "gross" ? "Groß" : "Klein"}: ${escapeHTML(item ? equipmentLabel(item) : "Gelöschtes Gerät")}</strong>
+              <div class="sub">${formatDateShort(log.cleaned_at)}${log.notes ? `, ${escapeHTML(log.notes)}` : ""}</div>
+            </div>
+            <button class="del" type="button" data-del-clean="${log.id}" aria-label="Eintrag löschen">×</button>
+          </div>`;
+      }).join("")
+    : `<div class="empty">Noch keine Reinigungen eingetragen.</div>`;
+
+  el.cleaningList.querySelectorAll("[data-del-clean]").forEach((btn) =>
+    btn.addEventListener("click", () => deleteCleaning(btn.dataset.delClean)));
+}
+
+async function insertCleaning(payload) {
+  const { error } = await supabaseClient.from(TABLE_CLEANING).insert(payload);
+  if (error) { console.error("Cleaning:", error); showToast(`Speichern fehlgeschlagen: ${error.message}`, "error"); return false; }
+  await loadCleaningLogs();
+  renderAll();
+  const item = getEquipmentById(payload.equipment_id);
+  if (item && isGrinder(item) && payload.cleaning_type === "gross") {
+    showToast("Große Reinigung gespeichert – Nullpunkt der Mühle prüfen");
+  } else {
+    showToast("Reinigung gespeichert 🧽");
+  }
+  return true;
+}
+
+async function quickClean(equipmentId, type) {
+  const item = getEquipmentById(equipmentId);
+  if (!item) return;
+  const label = type === "gross" ? "Große" : "Kleine";
+  if (!confirm(`${label} Reinigung für ${equipmentLabel(item)} heute eintragen?`)) return;
+  await insertCleaning({ equipment_id: Number(equipmentId), cleaning_type: type, cleaned_at: todayISO(), notes: null });
+}
+
+async function saveCleaning(event) {
+  event.preventDefault();
+  if (!el.cleaningEquipment.value) { setMsg(el.cleaningMessage, "Bitte ein Gerät wählen.", "error"); return; }
+  setButtonLoading(el.saveCleaningBtn, true, "Speichere …", "Reinigung speichern");
+  const ok = await insertCleaning({
+    equipment_id:  Number(el.cleaningEquipment.value),
+    cleaning_type: el.cleaningType.value,
+    cleaned_at:    el.cleaningDate.value || todayISO(),
+    notes:         el.cleaningNotes.value.trim() || null,
+  });
+  setButtonLoading(el.saveCleaningBtn, false, "Speichere …", "Reinigung speichern");
+  if (ok) { resetCleaningForm(); el.cleaningFormDetails.open = false; }
+}
+
+function resetCleaningForm() {
+  el.cleaningEquipment.value = "";
+  el.cleaningType.value = "klein";
+  el.cleaningDate.value = todayISO();
+  el.cleaningNotes.value = "";
+  setMsg(el.cleaningMessage, "");
+}
+
+async function deleteCleaning(id) {
+  if (!confirm("Diesen Reinigungseintrag löschen?")) return;
+  const { error } = await supabaseClient.from(TABLE_CLEANING).delete().eq("id", id);
+  if (error) { console.error(error); showToast("Löschen fehlgeschlagen", "error"); return; }
+  await loadCleaningLogs();
+  renderAll();
+  showToast("Eintrag gelöscht");
+}
+
+
+/* ============================================================
+   Geräte
    ============================================================ */
 
 function readEquipmentForm() {
   return {
     category:      el.equipmentCategory.value || "Sonstiges",
     name:          el.equipmentName.value.trim(),
-    brand:         el.equipmentBrand.value.trim()  || null,
-    model:         el.equipmentModel.value.trim()  || null,
-    purchase_date: el.equipmentPurchaseDate.value  || null,
+    brand:         el.equipmentBrand.value.trim() || null,
+    model:         el.equipmentModel.value.trim() || null,
+    purchase_date: el.equipmentPurchaseDate.value || null,
     price_eur:     toNumber(el.equipmentPrice.value),
-    facts:         el.equipmentFacts.value.trim()  || null,
-    notes:         el.equipmentNotes.value.trim()  || null,
+    facts:         el.equipmentFacts.value.trim() || null,
+    notes:         el.equipmentNotes.value.trim() || null,
     is_active:     Boolean(el.equipmentActive.checked),
     updated_at:    new Date().toISOString(),
   };
@@ -1246,88 +1918,115 @@ function readEquipmentForm() {
 
 async function saveEquipment(event) {
   event.preventDefault();
-  const payload   = readEquipmentForm();
-  if (!payload.name) { setEquipmentMessage("Bitte mindestens einen Namen eintragen.", "error"); return; }
-  const isEditing   = Boolean(state.editingEquipmentId);
-  const defaultText = isEditing ? "Änderung speichern" : "Equipment speichern";
-  setButtonLoading(el.saveEquipmentBtn, true, "Speichere ...", defaultText);
+  const payload = readEquipmentForm();
+  if (!payload.name) { setMsg(el.equipmentMessage, "Bitte einen Namen eintragen.", "error"); el.equipmentName.focus(); return; }
+
+  const isEditing = Boolean(state.editingEquipmentId);
+  const defaultText = isEditing ? "Änderung speichern" : "Gerät speichern";
+  setButtonLoading(el.saveEquipmentBtn, true, "Speichere …", defaultText);
   const response = isEditing
-    ? await supabaseClient.from(TABLE_EQUIPMENT).update(payload).eq("id", state.editingEquipmentId).select().single()
-    : await supabaseClient.from(TABLE_EQUIPMENT).insert(payload).select().single();
-  setButtonLoading(el.saveEquipmentBtn, false, "Speichere ...", defaultText);
-  if (response.error) { console.error("Equipment:", response.error); setEquipmentMessage(`Speichern fehlgeschlagen: ${response.error.message}`, "error"); return; }
-  showToast(isEditing ? "Equipment aktualisiert." : "Equipment gespeichert.");
-  resetEquipmentForm(); await loadEquipment(); renderAll();
+    ? await supabaseClient.from(TABLE_EQUIPMENT).update(payload).eq("id", state.editingEquipmentId)
+    : await supabaseClient.from(TABLE_EQUIPMENT).insert(payload);
+  setButtonLoading(el.saveEquipmentBtn, false, "Speichere …", defaultText);
+
+  if (response.error) {
+    console.error("Equipment:", response.error);
+    setMsg(el.equipmentMessage, `Speichern fehlgeschlagen: ${response.error.message}`, "error");
+    return;
+  }
+
+  resetEquipmentForm();
+  el.equipmentFormDetails.open = false;
+  await loadEquipment();
+  renderAll();
+  showToast(isEditing ? "Gerät aktualisiert" : "Gerät gespeichert");
 }
 
 function renderEquipment() {
-  el.equipmentCount.textContent = `${state.equipment.length} Geräte`;
-  el.equipmentList.innerHTML    = "";
-  if (!state.equipment.length) { el.equipmentList.innerHTML = `<div class="empty">Noch kein Equipment hinterlegt.</div>`; return; }
-  const grouped = new Map();
-  state.equipment.forEach(item => { const c = item.category || "Sonstiges"; if (!grouped.has(c)) grouped.set(c, []); grouped.get(c).push(item); });
-  grouped.forEach((items, category) => {
-    const group = document.createElement("section"); group.className = "equipment-group";
-    group.innerHTML = `<div class="day-head"><h3>${escapeHTML(getEquipmentIcon(category))} ${escapeHTML(category)}</h3><span>${items.length}</span></div>`;
-    items.forEach(item => {
-      const card = document.createElement("article");
-      card.className = `equipment-card ${item.is_active ? "active-equipment" : "inactive-equipment"}`;
-      card.innerHTML = `
-        <div class="equipment-main">
-          <div class="equipment-icon">${escapeHTML(getEquipmentIcon(item.category))}</div>
-          <div class="equipment-content">
-            <div class="equipment-title-row"><strong>${escapeHTML(item.name)}</strong><span>${item.is_active ? "Aktiv" : "Inaktiv"}</span></div>
-            <p class="entry-line muted">${[item.brand, item.model, item.purchase_date ? `Gekauft: ${formatDateShort(item.purchase_date)}` : "", item.price_eur != null ? `${formatNumber(item.price_eur, 2)} €` : ""].filter(Boolean).map(escapeHTML).join(" · ")}</p>
-            ${item.facts ? `<p><strong>Fakten:</strong> ${escapeHTML(item.facts)}</p>` : ""}
-            ${item.notes ? `<p><strong>Notiz:</strong>  ${escapeHTML(item.notes)}</p>`  : ""}
+  el.equipmentCount.textContent = String(state.equipment.length);
+  if (!state.equipment.length) {
+    el.equipmentList.innerHTML = `<div class="empty">Noch keine Geräte. Füge unten deine Maschine und Mühle hinzu.</div>`;
+    el.equipmentFormDetails.open = true;
+    return;
+  }
+
+  el.equipmentList.innerHTML = state.equipment.map((item) => `
+    <article class="item-card ${item.is_active ? "" : "inactive"}" data-eq="${item.id}" tabindex="0">
+      <div class="item-main">
+        <div class="item-icon">${getEquipmentIcon(item.category)}</div>
+        <div class="item-content">
+          <div class="item-title">
+            <strong>${escapeHTML(item.name)}</strong>
+            <span>${escapeHTML(item.category)}${item.is_active ? "" : ", inaktiv"}</span>
           </div>
+          <div class="meta">
+            ${item.brand ? `<span>${escapeHTML(item.brand)}</span>` : ""}
+            ${item.model ? `<span>${escapeHTML(item.model)}</span>` : ""}
+            ${item.purchase_date ? `<span>seit ${formatDateShort(item.purchase_date)}</span>` : ""}
+            ${item.price_eur !== null && item.price_eur !== undefined ? `<span>${formatFixed(item.price_eur, 2)} €</span>` : ""}
+          </div>
+          ${item.facts ? `<p class="item-note">${escapeHTML(item.facts)}</p>` : ""}
+          ${item.notes ? `<p class="item-note">${escapeHTML(item.notes)}</p>` : ""}
         </div>
-        <button class="delete-equipment" type="button" aria-label="Equipment löschen">×</button>`;
-      card.addEventListener("click", () => startEditEquipment(item));
-      card.querySelector(".delete-equipment").addEventListener("click", async e => { e.stopPropagation(); await deleteEquipment(item.id); });
-      group.appendChild(card);
-    });
-    el.equipmentList.appendChild(group);
+      </div>
+    </article>`).join("");
+
+  el.equipmentList.querySelectorAll("[data-eq]").forEach((card) => {
+    const open = () => startEditEquipment(getEquipmentById(card.dataset.eq));
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
   });
 }
 
 function startEditEquipment(item) {
-  state.editingEquipmentId      = item.id;
-  el.equipmentCategory.value    = item.category || "Sonstiges";
-  el.equipmentName.value        = item.name     || "";
-  el.equipmentBrand.value       = item.brand    || "";
-  el.equipmentModel.value       = item.model    || "";
-  el.equipmentPurchaseDate.value= item.purchase_date || "";
-  el.equipmentPrice.value       = item.price_eur ?? "";
-  el.equipmentFacts.value       = item.facts    || "";
-  el.equipmentNotes.value       = item.notes    || "";
-  el.equipmentActive.checked    = Boolean(item.is_active);
+  if (!item) return;
+  state.editingEquipmentId = item.id;
+  el.equipmentCategory.value     = item.category || "Sonstiges";
+  el.equipmentName.value         = item.name || "";
+  el.equipmentBrand.value        = item.brand || "";
+  el.equipmentModel.value        = item.model || "";
+  el.equipmentPurchaseDate.value = item.purchase_date || "";
+  el.equipmentPrice.value        = item.price_eur ?? "";
+  el.equipmentFacts.value        = item.facts || "";
+  el.equipmentNotes.value        = item.notes || "";
+  el.equipmentActive.checked     = Boolean(item.is_active);
   el.saveEquipmentBtn.textContent = "Änderung speichern";
+  el.equipmentFormSummary.textContent = `${equipmentLabel(item)} bearbeiten`;
   el.cancelEquipmentEditBtn.classList.remove("hidden");
-  setEquipmentMessage("Du bearbeitest gerade ein Equipment.");
-  openView("equipment");
+  el.deleteEquipmentBtn.classList.remove("hidden");
+  setMsg(el.equipmentMessage, "");
+  el.equipmentFormDetails.open = true;
+  el.equipmentFormDetails.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function resetEquipmentForm() {
-  state.editingEquipmentId       = null;
-  el.equipmentCategory.value     = "Maschine"; el.equipmentName.value  = ""; el.equipmentBrand.value = "";
-  el.equipmentModel.value        = ""; el.equipmentPurchaseDate.value   = ""; el.equipmentPrice.value = "";
-  el.equipmentFacts.value        = ""; el.equipmentNotes.value          = ""; el.equipmentActive.checked = true;
-  el.saveEquipmentBtn.textContent = "Equipment speichern";
+  state.editingEquipmentId = null;
+  el.equipmentForm.reset();
+  el.equipmentCategory.value = "Maschine";
+  el.equipmentActive.checked = true;
+  el.saveEquipmentBtn.textContent = "Gerät speichern";
+  el.equipmentFormSummary.textContent = "Gerät hinzufügen";
   el.cancelEquipmentEditBtn.classList.add("hidden");
-  setEquipmentMessage("");
+  el.deleteEquipmentBtn.classList.add("hidden");
+  setMsg(el.equipmentMessage, "");
 }
 
-async function deleteEquipment(id) {
-  if (!window.confirm("Dieses Equipment wirklich löschen?")) return;
-  const { error } = await supabaseClient.from(TABLE_EQUIPMENT).delete().eq("id", id);
-  if (error) { console.error(error); showToast("Löschen fehlgeschlagen."); return; }
-  showToast("Equipment gelöscht."); await loadEquipment(); renderAll();
+async function deleteEditedEquipment() {
+  const item = getEquipmentById(state.editingEquipmentId);
+  if (!item) return;
+  if (!confirm(`${equipmentLabel(item)} wirklich löschen? Tipp: „In Benutzung“ abwählen behält den Verlauf.`)) return;
+  const { error } = await supabaseClient.from(TABLE_EQUIPMENT).delete().eq("id", item.id);
+  if (error) { console.error(error); showToast(`Löschen fehlgeschlagen: ${error.message}`, "error"); return; }
+  resetEquipmentForm();
+  el.equipmentFormDetails.open = false;
+  await Promise.all([loadEquipment(), loadCleaningLogs()]);
+  renderAll();
+  showToast("Gerät gelöscht");
 }
 
 
 /* ============================================================
-   Settings
+   Einstellungen
    ============================================================ */
 
 async function saveSettings() {
@@ -1340,291 +2039,32 @@ async function saveSettings() {
     target_pressure_max_bar: toNumber(el.targetPressureMax.value) ?? 10,
     updated_at: new Date().toISOString(),
   };
-  if (payload.target_time_min_s >= payload.target_time_max_s) { setSettingsMessage("Die minimale Zielzeit muss kleiner als die maximale Zielzeit sein.", "error"); return; }
-  setButtonLoading(el.saveSettingsBtn, true, "Speichere ...", "Einstellungen speichern");
+
+  if (payload.target_time_min_s >= payload.target_time_max_s) {
+    setMsg(el.settingsMessage, "Die minimale Zielzeit muss kleiner als die maximale sein.", "error");
+    return;
+  }
+  if (payload.target_pressure_min_bar >= payload.target_pressure_max_bar) {
+    setMsg(el.settingsMessage, "Der minimale Druck muss kleiner als der maximale sein.", "error");
+    return;
+  }
+
+  setButtonLoading(el.saveSettingsBtn, true, "Speichere …", "Zielbereiche speichern");
   const { error } = await supabaseClient.from(TABLE_SETTINGS).upsert(payload, { onConflict: "id" });
-  setButtonLoading(el.saveSettingsBtn, false, "Speichere ...", "Einstellungen speichern");
-  if (error) { console.error("Settings:", error); setSettingsMessage(`Speichern fehlgeschlagen: ${error.message}`, "error"); return; }
-  state.settings = {
-    caffeine_limit_mg:       payload.caffeine_limit_mg,
-    target_time_min_s:       payload.target_time_min_s,
-    target_time_max_s:       payload.target_time_max_s,
-    target_pressure_min_bar: payload.target_pressure_min_bar,
-    target_pressure_max_bar: payload.target_pressure_max_bar,
-  };
-  state.recommendations = buildRecommendations(state.entries);
-  setSettingsMessage("Einstellungen gespeichert."); showToast("Einstellungen gespeichert."); renderAll();
-}
+  setButtonLoading(el.saveSettingsBtn, false, "Speichere …", "Zielbereiche speichern");
 
-
-/* ============================================================
-   Charts
-   ============================================================ */
-
-function setupCanvas(canvas) {
-  if (!canvas) return null;
-  const ctx = canvas.getContext("2d");
-  const ratio = window.devicePixelRatio || 1;
-  const rect  = canvas.getBoundingClientRect();
-  const width = rect.width || 400;
-  const height= Number(canvas.getAttribute("height")) || 220;
-  canvas.width  = Math.floor(width  * ratio);
-  canvas.height = Math.floor(height * ratio);
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-  return { ctx, width, height };
-}
-
-function drawBarWithAverage(canvas, labels, values, average, unit) {
-  const s = setupCanvas(canvas); if (!s) return;
-  const { ctx, width, height } = s;
-  const pad = 30, chartW = width - pad*2, chartH = height - pad*2;
-  const max = Math.max(average, ...values, 1) * 1.25;
-  const barGap = 8, barW = Math.max(10, (chartW - barGap * (values.length-1)) / values.length);
-  ctx.strokeStyle = "rgba(245,245,245,0.12)"; ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) { const y = pad + (chartH/4)*i; ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(width-pad, y); ctx.stroke(); }
-  values.forEach((value, index) => {
-    const x = pad + index * (barW + barGap), h = (value/max)*chartH, y = pad + chartH - h;
-    const grd = ctx.createLinearGradient(0, y, 0, y+h); grd.addColorStop(0, "#ffcf8a"); grd.addColorStop(1, "#8b4513");
-    ctx.fillStyle = grd; roundRect(ctx, x, y, barW, h||2, 6); ctx.fill();
-    ctx.fillStyle = "rgba(245,245,245,0.68)"; ctx.font = "11px system-ui"; ctx.textAlign = "center";
-    ctx.fillText(labels[index], x + barW/2, height - 8);
-  });
-  const avgY = pad + chartH - (average/max)*chartH;
-  ctx.strokeStyle = "rgba(245,245,245,0.8)"; ctx.setLineDash([5,5]);
-  ctx.beginPath(); ctx.moveTo(pad, avgY); ctx.lineTo(width-pad, avgY); ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillStyle = "rgba(245,245,245,0.8)"; ctx.font = "11px system-ui"; ctx.textAlign = "left";
-  ctx.fillText(`Ø ${formatNumber(average)} ${unit}`, pad, avgY - 6);
-}
-
-function drawLineChart(canvas, labels, values, unit) {
-  const s = setupCanvas(canvas); if (!s) return;
-  const { ctx, width, height } = s;
-  const pad = 30, chartW = width - pad*2, chartH = height - pad*2;
-  if (!values.length || values.every(v => !v)) { ctx.fillStyle = "rgba(245,245,245,0.68)"; ctx.font = "13px system-ui"; ctx.fillText("Noch keine Daten", pad, height/2); return; }
-  const max = Math.max(...values, 1) * 1.2;
-  ctx.strokeStyle = "rgba(245,245,245,0.12)"; ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) { const y = pad + (chartH/4)*i; ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(width-pad, y); ctx.stroke(); }
-  const xFor = i => pad + (chartW*i) / Math.max(values.length-1, 1);
-  const yFor = v => pad + chartH - (v/max)*chartH;
-  ctx.strokeStyle = "#ffcf8a"; ctx.lineWidth = 2.5; ctx.beginPath();
-  values.forEach((v, i) => { if (i === 0) ctx.moveTo(xFor(i), yFor(v)); else ctx.lineTo(xFor(i), yFor(v)); }); ctx.stroke();
-  ctx.fillStyle = "#d4a574";
-  values.forEach((v, i) => { if (v <= 0) return; ctx.beginPath(); ctx.arc(xFor(i), yFor(v), 3, 0, Math.PI*2); ctx.fill(); });
-  ctx.fillStyle = "rgba(245,245,245,0.68)"; ctx.font = "11px system-ui"; ctx.textAlign = "left";
-  ctx.fillText(`${formatNumber(max)} ${unit}`, pad, 14);
-}
-
-function drawDonut(canvas, items) {
-  const s = setupCanvas(canvas); if (!s) return;
-  const { ctx, width, height } = s;
-  if (!items.length) { ctx.fillStyle = "rgba(245,245,245,0.68)"; ctx.font = "13px system-ui"; ctx.fillText("Noch keine Daten", 24, height/2); return; }
-  const total  = items.reduce((s, i) => s + i[1], 0);
-  const cx = width/2, cy = height/2, radius = Math.min(width, height) * 0.3;
-  const colors = ["#ffcf8a", "#d4a574", "#8b4513", "#b8753a", "#f0b36e", "#6a3514"];
-  let start = -Math.PI / 2;
-  items.forEach((item, index) => {
-    const angle = (item[1]/total) * Math.PI * 2;
-    ctx.strokeStyle = colors[index % colors.length]; ctx.lineWidth = 24; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.arc(cx, cy, radius, start, start + angle); ctx.stroke(); start += angle;
-  });
-  ctx.fillStyle = "#f5f5f5"; ctx.font = "700 20px system-ui"; ctx.textAlign = "center";
-  ctx.fillText(String(total), cx, cy + 2);
-  ctx.fillStyle = "rgba(245,245,245,0.68)"; ctx.font = "11px system-ui"; ctx.fillText("Shots", cx, cy + 20);
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  const radius = Math.min(r, w/2, h/2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x+w, y, x+w, y+h, radius);
-  ctx.arcTo(x+w, y+h, x, y+h, radius);
-  ctx.arcTo(x, y+h, x, y, radius);
-  ctx.arcTo(x, y, x+w, y, radius);
-  ctx.closePath();
-}
-
-/* ============================================================
-   Cleaning Protocol
-   ============================================================ */
-
-// Schwellen in Tagen
-const CLEANING_THRESHOLDS = {
-  klein: { ok: 3,  warn: 7  },   // klein: ok < 3d, warn 3-7d, danach late
-  gross: { ok: 14, warn: 30 },   // gross: ok < 14d, warn 14-30d, danach late
-};
-
-async function loadCleaningLogs() {
-  const { data, error } = await supabaseClient
-    .from(TABLE_CLEANING).select("*")
-    .order("cleaned_at", { ascending: false });
-  if (error) { console.error("Cleaning:", error); state.cleaningLogs = []; return; }
-  state.cleaningLogs = data || [];
-}
-
-function renderCleaningEquipmentSelect() {
-  const cur = el.cleaningEquipment.value;
-  const items = state.equipment.filter(i =>
-    normalize(i.category).includes("maschine") || normalize(i.category).includes("muhle")
-  );
-  el.cleaningEquipment.innerHTML = `<option value="">Bitte wählen …</option>`;
-  items.forEach(i => {
-    const o = document.createElement("option");
-    o.value = i.id;
-    o.textContent = `${getEquipmentIcon(i.category)} ${equipmentLabel(i)}`;
-    el.cleaningEquipment.appendChild(o);
-  });
-  if (cur) el.cleaningEquipment.value = cur;
-}
-
-function daysSince(dateStr) {
-  if (!dateStr) return Infinity;
-  const ms = Date.now() - new Date(`${dateStr}T00:00:00`).getTime();
-  return Math.floor(ms / 86400000);
-}
-
-function getLastCleaning(equipmentId, type) {
-  return state.cleaningLogs.find(c =>
-    String(c.equipment_id) === String(equipmentId) && c.cleaning_type === type
-  ) || null;
-}
-
-function cleaningStatusClass(days, type) {
-  const t = CLEANING_THRESHOLDS[type];
-  if (days <= t.ok)   return "is-ok";
-  if (days <= t.warn) return "is-due";
-  return "is-late";
-}
-
-function renderCleaning() {
-  renderCleaningEquipmentSelect();
-  renderCleaningStatus();
-  renderCleaningList();
-  el.cleaningCount.textContent = `${state.cleaningLogs.length} Einträge`;
-}
-
-function renderCleaningStatus() {
-  el.cleaningStatus.innerHTML = "";
-  const items = state.equipment.filter(i =>
-    i.is_active && (normalize(i.category).includes("maschine") || normalize(i.category).includes("muhle"))
-  );
-  if (!items.length) {
-    el.cleaningStatus.innerHTML = `<div class="empty compact">Keine aktiven Geräte vorhanden.</div>`;
-    return;
-  }
-  items.forEach(item => {
-    ["klein", "gross"].forEach(type => {
-      const last = getLastCleaning(item.id, type);
-      const days = last ? daysSince(last.cleaned_at) : Infinity;
-      const cls  = last ? cleaningStatusClass(days, type) : "is-late";
-      const label= type === "klein" ? "🧴 Klein" : "🧽 Groß";
-      const text = last
-        ? (days === 0 ? "heute" : days === 1 ? "gestern" : `vor ${days} Tagen`)
-        : "noch nie";
-      const row = document.createElement("div");
-      row.className = `cleaning-status-row ${cls}`;
-      row.innerHTML = `
-        <div>
-          <strong>${escapeHTML(equipmentLabel(item))}</strong>
-          <small> · ${label}</small>
-        </div>
-        <span class="badge">${text}</span>`;
-      el.cleaningStatus.appendChild(row);
-    });
-  });
-}
-
-function renderCleaningList() {
-  el.cleaningList.innerHTML = "";
-  if (!state.cleaningLogs.length) {
-    el.cleaningList.innerHTML = `<div class="empty compact">Noch keine Reinigungen protokolliert.</div>`;
-    return;
-  }
-  state.cleaningLogs.slice(0, 30).forEach(log => {
-    const item = getEquipmentById(log.equipment_id);
-    const name = item ? equipmentLabel(item) : "Unbekanntes Gerät";
-    const icon = log.cleaning_type === "klein" ? "🧴" : "🧽";
-    const row  = document.createElement("div");
-    row.className = "cleaning-item";
-    row.innerHTML = `
-      <div>
-        <strong>${icon} ${escapeHTML(name)}</strong>
-        <div class="meta">${formatDateShort(log.cleaned_at)}${log.notes ? " · " + escapeHTML(log.notes) : ""}</div>
-      </div>
-      <button class="del" type="button" aria-label="Löschen">×</button>`;
-    row.querySelector(".del").addEventListener("click", () => deleteCleaning(log.id));
-    el.cleaningList.appendChild(row);
-  });
-}
-
-async function saveCleaning(event) {
-  event.preventDefault();
-  const equipment_id = el.cleaningEquipment.value;
-  if (!equipment_id) {
-    setMsg(el.cleaningMessage, "Bitte ein Gerät wählen.", "error");
-    return;
-  }
-  const payload = {
-    equipment_id:  Number(equipment_id),
-    cleaning_type: el.cleaningType.value,
-    cleaned_at:    el.cleaningDate.value || todayISO(),
-    notes:         el.cleaningNotes.value.trim() || null,
-  };
-  setButtonLoading(el.saveCleaningBtn, true, "Speichere ...", "Reinigung speichern");
-  const { error } = await supabaseClient.from(TABLE_CLEANING).insert(payload);
-  setButtonLoading(el.saveCleaningBtn, false, "Speichere ...", "Reinigung speichern");
   if (error) {
-    console.error("Cleaning save:", error);
-    setMsg(el.cleaningMessage, `Speichern fehlgeschlagen: ${error.message}`, "error");
+    console.error("Settings:", error);
+    setMsg(el.settingsMessage, `Speichern fehlgeschlagen: ${error.message}`, "error");
     return;
   }
-  showToast("Reinigung gespeichert 🧽");
-  resetCleaningForm();
-  await loadCleaningLogs();
-  state.recommendations = buildRecommendations(state.entries);
+
+  const { id, updated_at, ...settings } = payload;
+  state.settings = settings;
+  setMsg(el.settingsMessage, "");
   renderAll();
-  renderCleaning();
+  showToast("Zielbereiche gespeichert");
 }
 
-function resetCleaningForm() {
-  el.cleaningEquipment.value = "";
-  el.cleaningType.value      = "klein";
-  el.cleaningDate.value      = todayISO();
-  el.cleaningNotes.value     = "";
-  setMsg(el.cleaningMessage, "");
-}
-
-async function deleteCleaning(id) {
-  if (!window.confirm("Diesen Reinigungseintrag löschen?")) return;
-  const { error } = await supabaseClient.from(TABLE_CLEANING).delete().eq("id", id);
-  if (error) { console.error(error); showToast("Löschen fehlgeschlagen."); return; }
-  showToast("Eintrag gelöscht.");
-  await loadCleaningLogs();
-  renderCleaning();
-}
-
-/* Letzte Reinigung (egal welcher Typ) für eine Mühle */
-function getLatestCleaningId(grinderId) {
-  if (!grinderId) return null;
-  const last = state.cleaningLogs.find(c => String(c.equipment_id) === String(grinderId));
-  return last ? last.id : null;
-}
-
-/* Letzte GROSSE Reinigung für eine Mühle (zum Filtern der Empfehlungen) */
-function getLastBigCleaningDate(grinderId) {
-  if (!grinderId) return null;
-  const last = state.cleaningLogs.find(c =>
-    String(c.equipment_id) === String(grinderId) && c.cleaning_type === "gross"
-  );
-  return last ? last.cleaned_at : null;
-}
-
-/* Ist der Shot nach der letzten großen Reinigung entstanden? */
-function isShotAfterLastBigCleaning(entry) {
-  if (!entry.grinder_id || !entry.entry_date) return true;
-  const cleanDate = getLastBigCleaningDate(entry.grinder_id);
-  if (!cleanDate) return true;
-  return entry.entry_date >= cleanDate;
-}
 
 init();
