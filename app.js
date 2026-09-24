@@ -12,6 +12,7 @@ const TABLE_SETTINGS    = "coffee_user_settings";
 const TABLE_CLEANING    = "coffee_cleaning_logs";
 const TABLE_SHELLY_LOGS = "coffee_shelly_logs";
 const TABLE_EXTRACTIONS = "coffee_shelly_extractions";
+const TABLE_BEANS       = "coffee_beans";
 
 /* Tuning */
 const EXTRACTION_LOOKBACK_MIN = 15;     // so lange wird eine erkannte Extraktion vorgeschlagen
@@ -36,9 +37,13 @@ const state = {
   entries: [],
   equipment: [],
   cleaningLogs: [],
+  beans: [],
   recommendations: [],
   editingId: null,
   editingEquipmentId: null,
+  editingBeanId: null,
+  beanDefaultApplied: false,
+  beansAvailable: true,
   filters: { date: "", coffee: "" },
   historyLimit: HISTORY_PAGE,
   settings: {
@@ -77,6 +82,9 @@ const el = {
   baristaBox: $("baristaBox"),
   entryForm: $("entryForm"),
   entryDetails: $("entryDetails"),
+  beanSelect: $("beanSelect"),
+  beanInfo: $("beanInfo"),
+  coffeeNameLabel: $("coffeeNameLabel"),
   coffeeName: $("coffeeName"),
   coffeeSuggestions: $("coffeeSuggestions"),
   mahlgrad: $("mahlgrad"),
@@ -139,7 +147,34 @@ const el = {
   methodCanvas: $("methodCanvas"),
   methodBars: $("methodBars"),
   heatmap: $("heatmap"),
+  freshCanvas: $("freshCanvas"),
+  freshBadge: $("freshBadge"),
+  freshHint: $("freshHint"),
   peakHour: $("peakHour"),
+
+  /* Setup: Bohnen */
+  beanCount: $("beanCount"),
+  beanList: $("beanList"),
+  beanArchive: $("beanArchive"),
+  beanArchiveSummary: $("beanArchiveSummary"),
+  beanFormDetails: $("beanFormDetails"),
+  beanFormSummary: $("beanFormSummary"),
+  beanForm: $("beanForm"),
+  beanName: $("beanName"),
+  beanRoaster: $("beanRoaster"),
+  beanRoastLevel: $("beanRoastLevel"),
+  beanPurchased: $("beanPurchased"),
+  beanRoasted: $("beanRoasted"),
+  beanOpened: $("beanOpened"),
+  beanWeight: $("beanWeight"),
+  beanPrice: $("beanPrice"),
+  beanFinished: $("beanFinished"),
+  beanNotes: $("beanNotes"),
+  beanActive: $("beanActive"),
+  beanMessage: $("beanMessage"),
+  saveBeanBtn: $("saveBeanBtn"),
+  cancelBeanEditBtn: $("cancelBeanEditBtn"),
+  deleteBeanBtn: $("deleteBeanBtn"),
 
   /* Geräte */
   cleaningCount: $("cleaningCount"),
@@ -382,6 +417,7 @@ function initFormDefaults() {
   el.yieldG.value = "36";
   el.caffeineMg.value = "80";
   el.cleaningDate.value = todayISO();
+  if (!state.editingBeanId && !el.beanPurchased.value) el.beanPurchased.value = todayISO();
   setRating("");
   updateRatio();
 }
@@ -404,7 +440,7 @@ function openView(viewName, { scroll = true } = {}) {
   }
   if (viewName === "recommendations") renderRecommendations();
   if (viewName === "history") renderEntries();
-  if (viewName === "equipment") { renderCleaning(); renderEquipment(); }
+  if (viewName === "equipment") { renderBeans(); renderCleaning(); renderEquipment(); }
   if (viewName === "dashboard") {
     renderDashboard();
     renderShellyPanel();
@@ -439,7 +475,14 @@ function bindEvents() {
   el.duplicateLastBtn.addEventListener("click", duplicateLastShot);
   el.applyRecommendationBtn.addEventListener("click", applyCurrentRecommendation);
 
-  el.coffeeName.addEventListener("input", () => { updateCurrentRecommendation(); renderQuickCoffeeButtons(); });
+  el.coffeeName.addEventListener("input", () => {
+    // Getippter Name passt zu einer Packung im Vorrat → Packung automatisch wählen
+    const match = findActiveBeanByName(el.coffeeName.value);
+    if (match && !el.beanSelect.value) { el.beanSelect.value = match.id; onBeanChange(); return; }
+    updateCurrentRecommendation();
+    renderQuickCoffeeButtons();
+  });
+  el.beanSelect.addEventListener("change", onBeanChange);
   el.grinderSelect.addEventListener("change", updateCurrentRecommendation);
   el.brewMethod.addEventListener("change", () => {
     el.caffeineMg.value = methodDefaultCaffeine(el.brewMethod.value);
@@ -447,6 +490,7 @@ function bindEvents() {
     renderQuickCoffeeButtons();
   });
   el.doseG.addEventListener("input", updateRatio);
+  el.entryDate.addEventListener("change", updateBeanInfo);
   el.yieldG.addEventListener("input", updateRatio);
 
   el.ratingPicker.addEventListener("click", (e) => {
@@ -469,6 +513,8 @@ function bindEvents() {
   });
 
   el.quickCoffeeButtons.addEventListener("click", (e) => {
+    const beanChip = e.target.closest("[data-bean]");
+    if (beanChip) { selectQuickBean(beanChip.dataset.bean); return; }
     const chip = e.target.closest("[data-coffee]");
     if (chip) selectQuickCoffee(chip.dataset.coffee);
   });
@@ -489,6 +535,11 @@ function bindEvents() {
     const btn = e.target.closest("[data-clean]");
     if (btn) quickClean(btn.dataset.id, btn.dataset.clean);
   });
+  el.beanForm.addEventListener("submit", saveBean);
+  el.cancelBeanEditBtn.addEventListener("click", () => { resetBeanForm(); el.beanFormDetails.open = false; });
+  el.deleteBeanBtn.addEventListener("click", deleteEditedBean);
+  el.beanList.addEventListener("click", onBeanListClick);
+  el.beanArchive.addEventListener("click", onBeanListClick);
   el.cleaningForm.addEventListener("submit", saveCleaning);
   el.resetCleaningBtn.addEventListener("click", resetCleaningForm);
   el.equipmentForm.addEventListener("submit", saveEquipment);
@@ -530,7 +581,7 @@ async function manualRefresh() {
    ============================================================ */
 
 async function reloadAll() {
-  await Promise.all([loadSettings(), loadEntries(), loadEquipment(), loadCleaningLogs()]);
+  await Promise.all([loadSettings(), loadEntries(), loadEquipment(), loadCleaningLogs(), loadBeans()]);
   state.lastLoadedAt = Date.now();
   renderAll();
 }
@@ -572,6 +623,15 @@ async function loadEquipment() {
   state.equipment = data || [];
 }
 
+async function loadBeans() {
+  const { data, error } = await supabaseClient
+    .from(TABLE_BEANS).select("*")
+    .order("created_at", { ascending: false });
+  if (error) { console.error("Beans:", error); state.beansAvailable = false; return; }
+  state.beansAvailable = true;
+  state.beans = data || [];
+}
+
 async function loadCleaningLogs() {
   const { data, error } = await supabaseClient
     .from(TABLE_CLEANING).select("*")
@@ -589,6 +649,7 @@ async function loadCleaningLogs() {
 function renderAll() {
   state.recommendations = buildRecommendations(state.entries);
   renderEquipmentSelects();
+  renderBeanSelect();
   renderCleaningEquipmentSelect();
   renderCoffeeSuggestions();
   renderQuickCoffeeButtons();
@@ -597,6 +658,7 @@ function renderAll() {
   renderEntries();
   renderEquipment();
   renderCleaning();
+  renderBeans();
   if (isViewActive("dashboard")) renderDashboard();
 }
 
@@ -948,7 +1010,18 @@ function buildRecommendations(entries) {
     .map((group) => {
       const fresh = group.filter(isShotAfterLastBigCleaning);
       const stale = fresh.length === 0;
-      return buildRecommendationFromGroup(stale ? group : fresh, stale);
+      let base = stale ? group : fresh;
+
+      // Aktuelle Packung bevorzugen, sobald es mindestens 2 Shots daraus gibt
+      const latest = sortedByTime(base).at(-1);
+      const bagShots = latest && latest.bean_id ? base.filter((e) => e.bean_id === latest.bean_id) : [];
+      const bagBased = bagShots.length >= 2;
+      if (bagBased) base = bagShots;
+
+      const rec = buildRecommendationFromGroup(base, stale);
+      rec.bean_id = latest ? latest.bean_id || null : null;
+      rec.bag_based = bagBased;
+      return rec;
     })
     .sort((a, b) => (a.stale - b.stale) || (b.score - a.score));
 }
@@ -1091,6 +1164,7 @@ function renderRecommendations() {
       </div>
       <p class="hint">${escapeHTML(rec.hint)}</p>
       ${rec.cleaning_info ? `<p class="info-note ${rec.stale ? "warn" : ""}">${escapeHTML(rec.cleaning_info)}</p>` : ""}
+      ${renderRecBean(rec)}
       ${renderRecFeedback(rec)}
       <button class="primary" type="button" data-rec="${i}">Für neuen Shot nutzen</button>
     </article>`).join("");
@@ -1099,6 +1173,7 @@ function renderRecommendations() {
     btn.addEventListener("click", () => {
       const rec = state.recommendations[Number(btn.dataset.rec)];
       resetForm();
+      selectBeanForCoffee(rec.coffee_name);
       el.coffeeName.value = rec.coffee_name;
       el.brewMethod.value = rec.method;
       el.caffeineMg.value = methodDefaultCaffeine(rec.method);
@@ -1258,6 +1333,7 @@ function renderBaristaBox() {
 function applyBaristaFeedback({ entry, action }) {
   const filled = [];
   if (!el.coffeeName.value.trim()) {
+    selectBeanForCoffee(entry.drink_name);
     el.coffeeName.value = entry.drink_name;
     if (entry.drink_type) el.brewMethod.value = entry.drink_type;
     if (entry.grinder_id) el.grinderSelect.value = entry.grinder_id;
@@ -1319,6 +1395,20 @@ function updateRatio() {
 }
 
 function renderQuickCoffeeButtons() {
+  const active = activeBeans();
+  if (active.length) {
+    el.quickCoffeeButtons.innerHTML = active.slice(0, 8).map((bean) => {
+      const rec = findRecommendation(bean.name, el.grinderSelect.value);
+      const age = beanAgeDays(bean);
+      return `
+        <button type="button" class="quick-chip ${String(bean.id) === el.beanSelect.value ? "selected" : ""}" data-bean="${bean.id}">
+          <strong>${escapeHTML(bean.name)}</strong>
+          <small>${age !== null ? `Tag ${age}` : "ohne Röstdatum"}${rec ? `, MG ${formatNumber(rec.best_grind, 1)}` : ""}</small>
+        </button>`;
+    }).join("");
+    return;
+  }
+
   const top = getTopCoffeeNames().slice(0, 8);
   const current = normalize(el.coffeeName.value);
   el.quickCoffeeButtons.innerHTML = top.map(({ name }) => {
@@ -1331,7 +1421,18 @@ function renderQuickCoffeeButtons() {
   }).join("");
 }
 
+function selectQuickBean(id) {
+  el.beanSelect.value = id;
+  onBeanChange();
+  const rec = findRecommendation(el.coffeeName.value, el.grinderSelect.value);
+  if (rec && !el.mahlgrad.value) {
+    applyRecommendation(rec);
+    setMsg(el.formMessage, `Mahlgrad ${formatNumber(rec.best_grind, 1)} aus der Empfehlung vorausgefüllt.`);
+  }
+}
+
 function selectQuickCoffee(name) {
+  selectBeanForCoffee(name);
   el.coffeeName.value = name;
   el.coffeeError.textContent = "";
   const rec = findRecommendation(name, el.grinderSelect.value);
@@ -1376,6 +1477,7 @@ function readEntryForm() {
     note:                el.note.value.trim() || null,
     machine_id:          el.machineSelect.value ? Number(el.machineSelect.value) : null,
     grinder_id:          grinderId,
+    bean_id:             el.beanSelect.value ? Number(el.beanSelect.value) : null,
     grinder_cleaning_id: getCleaningIdForShot(grinderId, entryDate, entryTime),
   };
 }
@@ -1398,6 +1500,7 @@ function validateEntryForm(entry) {
 async function saveEntry(event) {
   event.preventDefault();
   const payload = readEntryForm();
+  if (!state.beansAvailable) delete payload.bean_id; // Tabelle coffee_beans noch nicht angelegt
   if (!validateEntryForm(payload)) return;
 
   const isEditing = Boolean(state.editingId);
@@ -1475,11 +1578,17 @@ function resetForm() {
   setMsg(el.formMessage, "");
   el.entryDetails.open = false;
   renderEquipmentSelects();
+  state.beanDefaultApplied = false;
+  renderBeanSelect();
   updateCurrentRecommendation();
   renderQuickCoffeeButtons();
 }
 
-function fillFormFromEntry(entry, { keepDateTime = false } = {}) {
+function fillFormFromEntry(entry, { keepDateTime = false, allowInactiveBean = false } = {}) {
+  const bean = entry.bean_id ? getBeanById(entry.bean_id) : null;
+  const useBean = bean && (bean.is_active || allowInactiveBean);
+  renderBeanSelect(useBean ? bean.id : null);
+  el.beanSelect.value     = useBean ? bean.id : "";
   el.coffeeName.value     = entry.drink_name || "";
   el.brewMethod.value     = entry.drink_type || "Espresso";
   el.machineSelect.value  = entry.machine_id || "";
@@ -1494,12 +1603,15 @@ function fillFormFromEntry(entry, { keepDateTime = false } = {}) {
     el.entryDate.value = entry.entry_date || todayISO();
     el.entryTime.value = formatEntryTime(entry.entry_time);
   }
+  state.beanDefaultApplied = true;
+  syncCoffeeNameVisibility();
+  updateBeanInfo();
   updateRatio();
 }
 
 function startEdit(entry) {
   state.editingId = entry.id;
-  fillFormFromEntry(entry, { keepDateTime: true });
+  fillFormFromEntry(entry, { keepDateTime: true, allowInactiveBean: true });
   el.extractionTime.value = entry.extraction_time_s ?? "";
   el.note.value = entry.note || "";
   setRating(entry.rating ?? "");
@@ -1604,6 +1716,7 @@ function renderEntries() {
               <div class="meta">
                 ${entry.grinder_id && showGrinderChip ? `<span>${escapeHTML(equipmentName(entry.grinder_id))}</span>` : ""}
                 ${methodGroup(entry.drink_type) !== "espresso" ? `<span>${escapeHTML(entry.drink_type)}</span>` : ""}
+                ${entryBeanChip(entry)}
                 ${entry.pressure_bar !== null && entry.pressure_bar !== undefined ? `<span>${formatNumber(entry.pressure_bar, 1)} bar</span>` : ""}
                 <span>Score ${score}</span>
                 ${cleanFlag}
@@ -1716,6 +1829,7 @@ function renderDashboard() {
   renderCoffeeRanking();
   renderTopShots();
   renderMethodDistribution();
+  renderFreshness();
   renderHeatmap();
 }
 
@@ -1935,6 +2049,40 @@ function drawTrendChart(canvas, values) {
   });
 }
 
+function drawFreshnessChart(canvas, points) {
+  const s = setupCanvas(canvas); if (!s) return;
+  const { ctx, width, height } = s;
+  if (!points.length) { drawEmpty(ctx, width, height); return; }
+
+  const minT = Number(state.settings.target_time_min_s);
+  const maxT = Number(state.settings.target_time_max_s);
+  const left = 30, right = 10, top = 12, bottom = 22;
+  const chartW = width - left - right, chartH = height - top - bottom;
+  const xMax = Math.max(30, Math.ceil(Math.max(...points.map((p) => p.x)) / 10) * 10);
+  const ys = points.map((p) => p.y);
+  const yMax = Math.ceil(Math.max(...ys, maxT) * 1.15 / 5) * 5;
+  const yMin = Math.max(0, Math.floor(Math.min(...ys, minT) * 0.8 / 5) * 5);
+  const xFor = (v) => left + (v / xMax) * chartW;
+  const yFor = (v) => top + chartH - ((v - yMin) / (yMax - yMin || 1)) * chartH;
+
+  // Optimales Frischefenster (Tag 7–30) und Zielzeit
+  ctx.fillStyle = "rgba(255,207,138,0.06)";
+  ctx.fillRect(xFor(7), top, xFor(Math.min(30, xMax)) - xFor(7), chartH);
+  ctx.fillStyle = "rgba(125,220,156,0.1)";
+  ctx.fillRect(left, yFor(maxT), chartW, yFor(minT) - yFor(maxT));
+
+  ctx.fillStyle = CHART_TEXT;
+  ctx.textAlign = "right";
+  [yMin, minT, maxT, yMax].forEach((v) => ctx.fillText(formatNumber(v), left - 6, yFor(v) + 4));
+  ctx.textAlign = "center";
+  for (let d = 0; d <= xMax; d += xMax > 60 ? 20 : 10) ctx.fillText(`${d}`, xFor(d), height - 6);
+
+  points.forEach((p) => {
+    ctx.fillStyle = p.ok ? "#7ddc9c" : "#ff7066";
+    ctx.beginPath(); ctx.arc(xFor(p.x), yFor(p.y), 4, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
 function drawDonut(canvas, items) {
   const s = setupCanvas(canvas); if (!s) return;
   const { ctx, width, height } = s;
@@ -1973,6 +2121,370 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, radius);
   ctx.arcTo(x, y, x + w, y, radius);
   ctx.closePath();
+}
+
+
+/* ============================================================
+   Kaffeebohnen (Packungen)
+   ============================================================ */
+
+function getBeanById(id) {
+  if (!id) return null;
+  return state.beans.find((b) => String(b.id) === String(id)) || null;
+}
+
+/* Aktive Packungen: frischeste Röstung zuerst, ohne Röstdatum ans Ende */
+function activeBeans() {
+  return state.beans
+    .filter((b) => b.is_active)
+    .sort((a, b) => (b.roasted_at || "").localeCompare(a.roasted_at || "") || (b.created_at || "").localeCompare(a.created_at || ""));
+}
+
+function findActiveBeanByName(name) {
+  const n = normalize(name);
+  if (!n) return null;
+  return activeBeans().find((b) => normalize(b.name) === n) || null;
+}
+
+/* Tage zwischen Röstung und einem Datum (Standard: heute) */
+function beanAgeDays(bean, dateStr = todayISO()) {
+  if (!bean || !bean.roasted_at) return null;
+  const roasted = new Date(`${bean.roasted_at}T00:00:00`);
+  const at = new Date(`${dateStr}T00:00:00`);
+  return Math.round((at - roasted) / 86400000);
+}
+
+function daysBetween(fromStr, toStr = todayISO()) {
+  if (!fromStr) return null;
+  return Math.round((new Date(`${toStr}T00:00:00`) - new Date(`${fromStr}T00:00:00`)) / 86400000);
+}
+
+/* Faustregeln für Espresso-Bohnen */
+function freshnessInfo(days) {
+  if (days === null) return { cls: "", label: "Röstdatum fehlt", hint: "" };
+  if (days < 0)   return { cls: "", label: "Röstdatum in der Zukunft?", hint: "" };
+  if (days < 5)   return { cls: "old", label: "sehr frisch", hint: "Die Bohnen gasen noch aus – Shots laufen oft ungleichmäßig. Ideal ab etwa Tag 5–7." };
+  if (days <= 30) return { cls: "fresh", label: "optimal", hint: "" };
+  if (days <= 60) return { cls: "old", label: "wird älter", hint: "Ältere Bohnen laufen meist schneller – eher etwas feiner mahlen." };
+  return { cls: "bad", label: "alt", hint: "Über zwei Monate nach Röstung: Aroma lässt deutlich nach, feiner mahlen hilft nur begrenzt." };
+}
+
+function beanUsage(bean) {
+  const shots = state.entries.filter((e) => String(e.bean_id) === String(bean.id));
+  const usedG = shots.reduce((sum, e) => sum + (Number(e.dose_g) || 0), 0);
+  const doses = shots.map((e) => Number(e.dose_g)).filter((v) => v > 0);
+  const avgDose = doses.length ? doses.reduce((a, b) => a + b, 0) / doses.length : 18;
+  const weight = toNumber(bean.weight_g);
+  const remaining = weight !== null ? Math.max(0, weight - usedG) : null;
+  const ratings = shots.map((e) => toNumber(e.rating)).filter((v) => v !== null);
+  const times = shots.map((e) => toNumber(e.extraction_time_s)).filter((v) => v !== null);
+  const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+  return {
+    shots: shots.length,
+    usedG,
+    remaining,
+    remainingShots: remaining !== null ? Math.floor(remaining / avgDose) : null,
+    percentLeft: weight ? Math.round((remaining / weight) * 100) : null,
+    avgRating: avg(ratings),
+    avgTime: avg(times),
+  };
+}
+
+function beanOptionLabel(bean) {
+  const age = beanAgeDays(bean);
+  const suffix = age !== null ? `Tag ${age} nach Röstung` : "ohne Röstdatum";
+  return `${bean.name} (${suffix}${bean.is_active ? "" : ", leer"})`;
+}
+
+/* Packungs-Auswahl im Shot-Formular. includeId: auch eine leere Packung anbieten (beim Bearbeiten) */
+function renderBeanSelect(includeId = null) {
+  const current = el.beanSelect.value;
+  const list = activeBeans();
+  const extraId = includeId || current;
+  const extra = extraId && !list.some((b) => String(b.id) === String(extraId)) ? getBeanById(extraId) : null;
+  if (extra) list.push(extra);
+
+  el.beanSelect.innerHTML = `<option value="">Ohne Packung (Name eingeben)</option>` +
+    list.map((b) => `<option value="${b.id}">${escapeHTML(beanOptionLabel(b))}</option>`).join("");
+  el.beanSelect.value = list.some((b) => String(b.id) === String(current)) ? current : "";
+
+  // Neuer Shot: Packung vom letzten Shot vorschlagen, sonst die einzige Packung im Vorrat
+  if (!state.beanDefaultApplied && !state.editingId && !el.beanSelect.value && list.length) {
+    const lastBean = state.entries.find((e) => e.bean_id);
+    const fromLast = lastBean ? activeBeans().find((b) => String(b.id) === String(lastBean.bean_id)) : null;
+    const pick = fromLast || (activeBeans().length === 1 ? activeBeans()[0] : null);
+    if (pick) {
+      el.beanSelect.value = pick.id;
+      el.coffeeName.value = pick.name;
+    }
+  }
+  if (state.entries.length || state.beans.length) state.beanDefaultApplied = true;
+
+  syncCoffeeNameVisibility();
+  updateBeanInfo();
+}
+
+function syncCoffeeNameVisibility() {
+  el.coffeeNameLabel.classList.toggle("hidden", Boolean(el.beanSelect.value));
+}
+
+function onBeanChange() {
+  const bean = getBeanById(el.beanSelect.value);
+  if (bean) {
+    el.coffeeName.value = bean.name;
+    el.coffeeError.textContent = "";
+  }
+  syncCoffeeNameVisibility();
+  updateBeanInfo();
+  updateCurrentRecommendation();
+  renderQuickCoffeeButtons();
+}
+
+/* Beim Wechsel auf einen Kaffee: passende Packung im Vorrat wählen, sonst „ohne Packung" */
+function selectBeanForCoffee(name) {
+  const match = findActiveBeanByName(name);
+  el.beanSelect.value = match ? match.id : "";
+  syncCoffeeNameVisibility();
+  updateBeanInfo();
+}
+
+function updateBeanInfo() {
+  const bean = getBeanById(el.beanSelect.value);
+  if (!bean) { el.beanInfo.textContent = ""; el.beanInfo.className = "bean-info"; return; }
+  const shotDate = el.entryDate.value || todayISO();
+  const age = beanAgeDays(bean, shotDate);
+  const fresh = freshnessInfo(age);
+  const usage = beanUsage(bean);
+  const opened = daysBetween(bean.opened_at, shotDate);
+  const parts = [
+    age !== null ? `Tag ${age} nach Röstung (${fresh.label})` : "Röstdatum fehlt",
+    opened !== null && opened >= 0 ? `offen seit ${opened} ${opened === 1 ? "Tag" : "Tagen"}` : null,
+    usage.remaining !== null ? `≈ ${formatNumber(usage.remaining)} g übrig` : null,
+  ].filter(Boolean);
+  el.beanInfo.textContent = parts.join(", ") + (fresh.hint ? `. ${fresh.hint}` : "");
+  el.beanInfo.className = `bean-info ${fresh.cls}`;
+}
+
+function entryBeanChip(entry) {
+  const bean = entry.bean_id ? getBeanById(entry.bean_id) : null;
+  if (!bean) return "";
+  const age = beanAgeDays(bean, entry.entry_date);
+  if (age === null) return `<span>🫘 Packung</span>`;
+  return `<span class="${freshnessInfo(age).cls}">🫘 Tag ${age}</span>`;
+}
+
+function renderRecBean(rec) {
+  const bean = rec.bean_id ? getBeanById(rec.bean_id) : null;
+  if (!bean) return "";
+  const age = beanAgeDays(bean);
+  const fresh = freshnessInfo(age);
+  const basis = rec.bag_based ? "Basis: Shots aus der aktuellen Packung" : "Neue Packung – Werte stammen auch aus früheren Packungen";
+  return `<p class="info-note">${basis}${age !== null ? ` (Tag ${age}, ${fresh.label})` : ""}.${fresh.hint ? ` ${fresh.hint}` : ""}</p>`;
+}
+
+function beanCardHTML(bean) {
+  const age = beanAgeDays(bean);
+  const fresh = freshnessInfo(age);
+  const usage = beanUsage(bean);
+  const opened = daysBetween(bean.opened_at);
+  const title = [bean.roaster, bean.roast_level].filter(Boolean).join(", ");
+
+  return `
+    <article class="item-card bean-card ${bean.is_active ? "" : "inactive"}" data-bean-edit="${bean.id}" tabindex="0">
+      <div class="item-main">
+        <div class="item-icon">🫘</div>
+        <div class="item-content">
+          <div class="item-title">
+            <strong>${escapeHTML(bean.name)}</strong>
+          </div>
+          ${title ? `<p class="bean-sub">${escapeHTML(title)}</p>` : ""}
+          <div class="meta">
+            <span class="${fresh.cls} strong">${age !== null ? `Tag ${age}, ${fresh.label}` : "Röstdatum fehlt"}</span>
+            ${bean.roasted_at ? `<span>geröstet ${formatDateShort(bean.roasted_at)}</span>` : ""}
+            ${bean.purchased_at ? `<span>gekauft ${formatDateShort(bean.purchased_at)}</span>` : ""}
+            ${opened !== null && opened >= 0 && bean.is_active ? `<span>offen seit ${opened} T</span>` : ""}
+            ${!bean.is_active && bean.finished_at ? `<span>leer seit ${formatDateShort(bean.finished_at)}</span>` : ""}
+          </div>
+          <div class="meta">
+            <span>${usage.shots} ${usage.shots === 1 ? "Shot" : "Shots"}</span>
+            ${usage.avgRating !== null ? `<span>⭐ ${formatNumber(usage.avgRating, 1)}</span>` : ""}
+            ${usage.avgTime !== null ? `<span>⏱️ ${formatNumber(usage.avgTime, 1)} s</span>` : ""}
+            ${bean.price_eur && bean.weight_g ? `<span>${formatFixed((Number(bean.price_eur) / Number(bean.weight_g)) * 18, 2)} € pro 18 g</span>` : ""}
+          </div>
+          ${bean.is_active && usage.remaining !== null ? `
+            <div class="bean-stock">
+              <div class="mini-track"><div class="mini-fill" style="width:${usage.percentLeft}%"></div></div>
+              <small>≈ ${formatNumber(usage.remaining)} von ${formatNumber(bean.weight_g)} g übrig${usage.remainingShots !== null ? `, reicht für ca. ${usage.remainingShots} Shots` : ""}</small>
+            </div>` : ""}
+          ${bean.notes ? `<p class="item-note">${escapeHTML(bean.notes)}</p>` : ""}
+          ${bean.is_active ? `<button class="ghost small bean-empty-btn" type="button" data-bean-empty="${bean.id}">Packung ist leer</button>` : ""}
+        </div>
+      </div>
+    </article>`;
+}
+
+function renderBeans() {
+  const active = activeBeans();
+  const archived = state.beans.filter((b) => !b.is_active)
+    .sort((a, b) => (b.finished_at || b.created_at || "").localeCompare(a.finished_at || a.created_at || ""));
+
+  el.beanCount.textContent = `${active.length} im Vorrat`;
+  el.beanList.innerHTML = active.length
+    ? active.map(beanCardHTML).join("")
+    : `<div class="empty">Keine Packung im Vorrat. Füge unten deine aktuelle Packung hinzu.</div>`;
+  el.beanArchiveSummary.textContent = `Aufgebrauchte Packungen (${archived.length})`;
+  el.beanArchive.innerHTML = archived.length
+    ? archived.map(beanCardHTML).join("")
+    : `<div class="empty">Noch keine aufgebrauchten Packungen.</div>`;
+
+  if (!state.beans.length && !state.editingBeanId) el.beanFormDetails.open = true;
+}
+
+function onBeanListClick(e) {
+  const emptyBtn = e.target.closest("[data-bean-empty]");
+  if (emptyBtn) { markBeanEmpty(emptyBtn.dataset.beanEmpty); return; }
+  const card = e.target.closest("[data-bean-edit]");
+  if (card) startEditBean(getBeanById(card.dataset.beanEdit));
+}
+
+function readBeanForm() {
+  return {
+    name:         el.beanName.value.trim(),
+    roaster:      el.beanRoaster.value.trim() || null,
+    roast_level:  el.beanRoastLevel.value || null,
+    purchased_at: el.beanPurchased.value || null,
+    roasted_at:   el.beanRoasted.value || null,
+    opened_at:    el.beanOpened.value || null,
+    finished_at:  el.beanFinished.value || null,
+    weight_g:     toNumber(el.beanWeight.value),
+    price_eur:    toNumber(el.beanPrice.value),
+    notes:        el.beanNotes.value.trim() || null,
+    is_active:    Boolean(el.beanActive.checked),
+  };
+}
+
+async function saveBean(event) {
+  event.preventDefault();
+  const payload = readBeanForm();
+  if (!payload.name) { setMsg(el.beanMessage, "Bitte einen Namen eintragen.", "error"); el.beanName.focus(); return; }
+  if (payload.roasted_at && payload.purchased_at && payload.roasted_at > payload.purchased_at) {
+    setMsg(el.beanMessage, "Das Röstdatum liegt nach dem Kaufdatum – bitte prüfen.", "error");
+    return;
+  }
+  if (!payload.is_active && !payload.finished_at) payload.finished_at = todayISO();
+  if (payload.is_active) payload.finished_at = null;
+
+  const isEditing = Boolean(state.editingBeanId);
+  const defaultText = isEditing ? "Änderung speichern" : "Packung speichern";
+  setButtonLoading(el.saveBeanBtn, true, "Speichere …", defaultText);
+  const response = isEditing
+    ? await supabaseClient.from(TABLE_BEANS).update(payload).eq("id", state.editingBeanId)
+    : await supabaseClient.from(TABLE_BEANS).insert(payload);
+  setButtonLoading(el.saveBeanBtn, false, "Speichere …", defaultText);
+
+  if (response.error) {
+    console.error("Bean:", response.error);
+    setMsg(el.beanMessage, `Speichern fehlgeschlagen: ${response.error.message}`, "error");
+    return;
+  }
+
+  resetBeanForm();
+  el.beanFormDetails.open = false;
+  await loadBeans();
+  if (!isEditing) state.beanDefaultApplied = false; // neue Packung direkt im Shot-Formular vorschlagen
+  renderAll();
+  showToast(isEditing ? "Packung aktualisiert" : "Packung gespeichert 🫘");
+}
+
+function startEditBean(bean) {
+  if (!bean) return;
+  state.editingBeanId = bean.id;
+  el.beanName.value       = bean.name || "";
+  el.beanRoaster.value    = bean.roaster || "";
+  el.beanRoastLevel.value = bean.roast_level || "";
+  el.beanPurchased.value  = bean.purchased_at || "";
+  el.beanRoasted.value    = bean.roasted_at || "";
+  el.beanOpened.value     = bean.opened_at || "";
+  el.beanFinished.value   = bean.finished_at || "";
+  el.beanWeight.value     = bean.weight_g ?? "";
+  el.beanPrice.value      = bean.price_eur ?? "";
+  el.beanNotes.value      = bean.notes || "";
+  el.beanActive.checked   = Boolean(bean.is_active);
+  el.saveBeanBtn.textContent = "Änderung speichern";
+  el.beanFormSummary.textContent = `${bean.name} bearbeiten`;
+  el.cancelBeanEditBtn.classList.remove("hidden");
+  el.deleteBeanBtn.classList.remove("hidden");
+  setMsg(el.beanMessage, "");
+  el.beanFormDetails.open = true;
+  el.beanFormDetails.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetBeanForm() {
+  state.editingBeanId = null;
+  el.beanForm.reset();
+  el.beanPurchased.value = todayISO();
+  el.beanActive.checked = true;
+  el.saveBeanBtn.textContent = "Packung speichern";
+  el.beanFormSummary.textContent = "Packung hinzufügen";
+  el.cancelBeanEditBtn.classList.add("hidden");
+  el.deleteBeanBtn.classList.add("hidden");
+  setMsg(el.beanMessage, "");
+}
+
+async function markBeanEmpty(id) {
+  const bean = getBeanById(id);
+  if (!bean) return;
+  if (!confirm(`${bean.name} als aufgebraucht markieren?`)) return;
+  const { error } = await supabaseClient.from(TABLE_BEANS)
+    .update({ is_active: false, finished_at: todayISO() }).eq("id", bean.id);
+  if (error) { console.error(error); showToast(`Speichern fehlgeschlagen: ${error.message}`, "error"); return; }
+  await loadBeans();
+  if (String(el.beanSelect.value) === String(bean.id) && !state.editingId) { el.beanSelect.value = ""; state.beanDefaultApplied = false; }
+  renderAll();
+  showToast("Packung als leer markiert");
+}
+
+async function deleteEditedBean() {
+  const bean = getBeanById(state.editingBeanId);
+  if (!bean) return;
+  const usage = beanUsage(bean);
+  const msg = usage.shots
+    ? `${bean.name} löschen? ${usage.shots} Shots behalten ihren Namen, verlieren aber die Verknüpfung (Röstdatum). Tipp: „Im Vorrat“ abwählen behält alles.`
+    : `${bean.name} wirklich löschen?`;
+  if (!confirm(msg)) return;
+  const { error } = await supabaseClient.from(TABLE_BEANS).delete().eq("id", bean.id);
+  if (error) { console.error(error); showToast(`Löschen fehlgeschlagen: ${error.message}`, "error"); return; }
+  resetBeanForm();
+  el.beanFormDetails.open = false;
+  await Promise.all([loadBeans(), loadEntries()]);
+  renderAll();
+  showToast("Packung gelöscht");
+}
+
+/* Stats: Extraktionszeit nach Tagen seit Röstung */
+function renderFreshness() {
+  const points = state.entries
+    .filter((e) => e.bean_id && toNumber(e.extraction_time_s) !== null)
+    .map((e) => ({ x: beanAgeDays(getBeanById(e.bean_id), e.entry_date), y: Number(e.extraction_time_s), ok: isShotInTarget(e), rating: toNumber(e.rating) }))
+    .filter((p) => p.x !== null && p.x >= 0);
+
+  if (points.length < 3) {
+    el.freshBadge.textContent = "zu wenig Daten";
+    el.freshHint.textContent = "Wähle beim Shot eine Packung mit Röstdatum – nach ein paar Shots siehst du hier, wie sich das Alter der Bohnen auswirkt.";
+  } else {
+    const avgAge = points.reduce((s, p) => s + p.x, 0) / points.length;
+    el.freshBadge.textContent = `Ø Tag ${formatNumber(avgAge)}`;
+    const rated = points.filter((p) => p.rating !== null);
+    const best = [["0–7", 0, 7], ["8–30", 8, 30], ["31–60", 31, 60], ["60+", 61, 9999]]
+      .map(([label, a, b]) => {
+        const r = rated.filter((p) => p.x >= a && p.x <= b).map((p) => p.rating);
+        return { label, n: r.length, avg: r.length ? r.reduce((x, y) => x + y, 0) / r.length : null };
+      })
+      .filter((g) => g.n >= 2)
+      .sort((a, b) => b.avg - a.avg)[0];
+    el.freshHint.textContent = best ? `Beste Bewertungen bisher an Tag ${best.label} nach Röstung (Ø ${formatNumber(best.avg, 1)} ★ bei ${best.n} Shots).` : "";
+  }
+  drawFreshnessChart(el.freshCanvas, points);
 }
 
 

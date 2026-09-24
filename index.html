@@ -66,6 +66,14 @@
         <form id="entryForm" novalidate>
           <div class="form-grid">
             <label class="full">
+              Packung
+              <select id="beanSelect">
+                <option value="">Ohne Packung (Name eingeben)</option>
+              </select>
+              <small id="beanInfo" class="bean-info"></small>
+            </label>
+
+            <label class="full" id="coffeeNameLabel">
               Kaffee / Bohne
               <input id="coffeeName" list="coffeeSuggestions" type="text" placeholder="z. B. Pano Sipeo Espresso" autocomplete="off" enterkeyhint="next" />
               <datalist id="coffeeSuggestions"></datalist>
@@ -334,6 +342,18 @@
         <article class="panel">
           <div class="panel-head">
             <div>
+              <h2>Frische und Extraktion</h2>
+              <p>Extraktionszeit nach Tagen seit der Röstung</p>
+            </div>
+            <span id="freshBadge" class="badge">–</span>
+          </div>
+          <canvas id="freshCanvas" class="chart-canvas" data-h="200"></canvas>
+          <p id="freshHint" class="chart-hint"></p>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
               <h2>Wann du Kaffee trinkst</h2>
               <p>Wochentag und Uhrzeit</p>
             </div>
@@ -347,9 +367,93 @@
     </section>
 
     <!-- ========================================================
-         GERÄTE (Reinigung + Equipment)
+         SETUP (Bohnen + Reinigung + Geräte)
          ======================================================== -->
-    <section id="view-equipment" class="view" aria-label="Geräte">
+    <section id="view-equipment" class="view" aria-label="Setup">
+
+      <!-- Kaffeebohnen -->
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>🫘 Kaffeebohnen</h2>
+            <p>Deine Packungen mit Kauf- und Röstdatum. Beim Shot wählst du die Packung aus.</p>
+          </div>
+          <span id="beanCount" class="badge">0</span>
+        </div>
+
+        <div id="beanList" class="stack"></div>
+
+        <details id="beanFormDetails" class="more-fields">
+          <summary id="beanFormSummary">Packung hinzufügen</summary>
+          <form id="beanForm" novalidate>
+            <div class="form-grid">
+              <label class="full">
+                Name
+                <input id="beanName" list="coffeeSuggestions" type="text" placeholder="z. B. Carroux Espresso" autocomplete="off" />
+              </label>
+              <label>
+                Röster / Marke
+                <input id="beanRoaster" type="text" placeholder="z. B. Carroux" />
+              </label>
+              <label>
+                Röstgrad
+                <select id="beanRoastLevel">
+                  <option value="">–</option>
+                  <option value="Hell">Hell</option>
+                  <option value="Mittel">Mittel</option>
+                  <option value="Mittel-dunkel">Mittel-dunkel</option>
+                  <option value="Dunkel">Dunkel</option>
+                </select>
+              </label>
+              <label>
+                Gekauft am
+                <input id="beanPurchased" type="date" />
+              </label>
+              <label>
+                Geröstet am
+                <input id="beanRoasted" type="date" />
+              </label>
+              <label>
+                Geöffnet am
+                <input id="beanOpened" type="date" />
+              </label>
+              <label>
+                Gewicht in g
+                <input id="beanWeight" type="number" inputmode="decimal" step="1" min="0" placeholder="250" />
+              </label>
+              <label>
+                Preis in €
+                <input id="beanPrice" type="number" inputmode="decimal" step="0.01" min="0" placeholder="optional" />
+              </label>
+              <label>
+                Aufgebraucht am
+                <input id="beanFinished" type="date" />
+              </label>
+              <label class="full">
+                Notizen
+                <textarea id="beanNotes" rows="2" placeholder="z. B. Herkunft, Geschmack, Händler …"></textarea>
+              </label>
+              <label class="checkbox-label full">
+                <input id="beanActive" type="checkbox" checked />
+                Im Vorrat (noch nicht leer)
+              </label>
+            </div>
+
+            <p id="beanMessage" class="message"></p>
+
+            <div class="actions">
+              <button id="saveBeanBtn" class="primary" type="submit">Packung speichern</button>
+              <button id="cancelBeanEditBtn" class="ghost hidden" type="button">Abbrechen</button>
+              <button id="deleteBeanBtn" class="danger hidden" type="button">Packung löschen</button>
+            </div>
+          </form>
+        </details>
+
+        <details class="more-fields">
+          <summary id="beanArchiveSummary">Aufgebrauchte Packungen</summary>
+          <div id="beanArchive" class="stack tight"></div>
+        </details>
+      </article>
 
       <!-- Reinigung -->
       <article class="panel">
@@ -570,8 +674,8 @@
       <span class="tab-label">Stats</span>
     </button>
     <button class="tab" data-view="equipment" type="button">
-      <span class="tab-icon" aria-hidden="true">⚙️</span>
-      <span class="tab-label">Geräte</span>
+      <span class="tab-icon" aria-hidden="true">🫘</span>
+      <span class="tab-label">Setup</span>
     </button>
     <button class="tab" data-view="settings" type="button">
       <span class="tab-icon" aria-hidden="true">🔧</span>

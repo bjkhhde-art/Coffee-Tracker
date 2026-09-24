@@ -672,6 +672,36 @@ details.more-fields[open] > summary { margin-bottom: 12px; }
   border-color: rgba(255, 207, 138, 0.25);
 }
 
+/* Kaffeebohnen */
+.bean-info {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.bean-info:empty { display: none; }
+.bean-info.fresh { color: var(--success); }
+.bean-info.old   { color: var(--warning); }
+.bean-info.bad   { color: var(--danger); }
+
+.bean-card .item-title span {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bean-sub { margin: -4px 0 6px; font-size: 0.8rem; }
+.bean-stock { margin-top: 8px; }
+.bean-stock .mini-track { height: 8px; margin-top: 0; }
+.bean-stock small { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--muted); }
+
+.bean-empty-btn { width: auto; margin-top: 10px; }
+
+.chart-hint { margin: 8px 0 0; font-size: 0.82rem; }
+.chart-hint:empty { display: none; }
+
 /* ============================================================
    History & cards
    ============================================================ */
@@ -789,6 +819,7 @@ details.more-fields[open] > summary { margin-bottom: 12px; }
 .meta span.strong { color: var(--text); font-weight: 700; }
 .meta span.fresh  { color: var(--success); }
 .meta span.old    { color: var(--warning); }
+.meta span.bad    { color: var(--danger); }
 .meta + .meta { margin-top: 4px; }
 
 .item-note { margin: 6px 0 0; font-size: 0.86rem; }
